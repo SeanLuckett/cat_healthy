@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tsbuildinfo
+cat.db
+cat.db-journal
+cat.db-shm
+cat.db-wal
+*.log
+.DS_Store
