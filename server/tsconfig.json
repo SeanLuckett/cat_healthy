@@ -8,11 +8,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "noEmit": true,
-    "baseUrl": ".",
-    "paths": {
-      "shared/*": ["../shared/*"]
-    }
+    "noEmit": true
   },
   "include": ["src/**/*.ts", "../shared/**/*.ts"]
 }
