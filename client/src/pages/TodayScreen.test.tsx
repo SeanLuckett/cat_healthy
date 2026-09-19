@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProvider } from "../test-utils";
 import TodayScreen from "./TodayScreen";
-import type { Food, StatusResponse } from "../../../shared/types";
+import type { Food, FeedingEvent, StatusResponse } from "../../../shared/types";
 
 const foods: Food[] = [
   { id: 1, name: "Chicken Pate", kcal_per_gram: 1.2, category: "wet", notes: null },
@@ -24,6 +24,7 @@ const baseStatus: StatusResponse = {
 const mockApi = (
   statusOverride: Partial<StatusResponse> = {},
   postFeedingResponse?: { ok: boolean; body: unknown },
+  feedingEvents: FeedingEvent[] = [],
 ) => {
   const status = { ...baseStatus, ...statusOverride };
   vi.stubGlobal(
@@ -37,6 +38,12 @@ const mockApi = (
         return Promise.resolve({
           ok: result.ok,
           json: async () => result.body,
+        } as Response);
+      }
+      if (url === "/api/feedings") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => feedingEvents,
         } as Response);
       }
       if (url === "/api/status") {
@@ -132,7 +139,6 @@ describe("TodayScreen", () => {
         body: JSON.stringify({
           food_id: 1,
           grams: 30,
-          meal_slot: null,
           is_treat: false,
         }),
       }),
@@ -154,5 +160,46 @@ describe("TodayScreen", () => {
     await waitFor(() =>
       expect(screen.getByText("Not enough remaining budget")).toBeInTheDocument(),
     );
+  });
+
+  it("shows an empty state when no feedings have been logged today", async () => {
+    mockApi();
+    renderWithProvider(<TodayScreen />);
+
+    await waitFor(() => expect(screen.getByText(/120 kcal/)).toBeInTheDocument());
+    expect(screen.getByText("No feedings logged yet today.")).toBeInTheDocument();
+  });
+
+  it("renders today's feeding events in a table", async () => {
+    const events: FeedingEvent[] = [
+      {
+        id: 1,
+        timestamp: "2026-01-01 08:05:00",
+        food_id: 1,
+        grams: 40,
+        meal_slot: 1,
+        is_treat: false,
+      },
+      {
+        id: 2,
+        timestamp: "2026-01-01 15:30:00",
+        food_id: 2,
+        grams: 5,
+        meal_slot: null,
+        is_treat: true,
+      },
+    ];
+    mockApi({}, undefined, events);
+    renderWithProvider(<TodayScreen />);
+
+    await waitFor(() => expect(screen.getByText(/120 kcal/)).toBeInTheDocument());
+
+    const table = within(screen.getByRole("table"));
+    expect(table.getByText("08:05")).toBeInTheDocument();
+    expect(table.getByText("15:30")).toBeInTheDocument();
+    expect(table.getByText("Chicken Pate")).toBeInTheDocument();
+    expect(table.getByText("Kibble")).toBeInTheDocument();
+    expect(table.getByText("Breakfast")).toBeInTheDocument();
+    expect(table.getByText("Treat")).toBeInTheDocument();
   });
 });

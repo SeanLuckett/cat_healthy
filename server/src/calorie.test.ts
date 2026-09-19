@@ -4,6 +4,7 @@ import {
   dailyTarget,
   remainingBudget,
   gramsForMeal,
+  computeMealSlot,
   weeklyLossRate,
   progressFlag,
 } from "./calorie.js";
@@ -110,6 +111,44 @@ describe("gramsForMeal", () => {
 
   it("returns null when there are no meals left", () => {
     expect(gramsForMeal(100, 0, food)).toBeNull();
+  });
+});
+
+describe("computeMealSlot", () => {
+  const makeEvent = (overrides: Partial<FeedingEvent> = {}): FeedingEvent => ({
+    id: 1,
+    timestamp: "2026-01-01T08:00:00",
+    food_id: 1,
+    grams: 50,
+    meal_slot: 1,
+    is_treat: false,
+    ...overrides,
+  });
+
+  it("returns null for a treat, even with existing non-treat events today", () => {
+    const todaysEvents = [makeEvent({ id: 1, meal_slot: 1, is_treat: false })];
+    expect(computeMealSlot(todaysEvents, true)).toBeNull();
+  });
+
+  it("returns 1 for the first non-treat feeding of an empty day", () => {
+    expect(computeMealSlot([], false)).toBe(1);
+  });
+
+  it("counts only non-treat events when numbering the next meal", () => {
+    const todaysEvents = [
+      makeEvent({ id: 1, meal_slot: 1, is_treat: false }),
+      makeEvent({ id: 2, meal_slot: null, is_treat: true }),
+    ];
+    expect(computeMealSlot(todaysEvents, false)).toBe(2);
+  });
+
+  it("is uncapped — does not clamp to MEALS_PER_DAY", () => {
+    const todaysEvents = [
+      makeEvent({ id: 1, meal_slot: 1, is_treat: false }),
+      makeEvent({ id: 2, meal_slot: 2, is_treat: false }),
+      makeEvent({ id: 3, meal_slot: 3, is_treat: false }),
+    ];
+    expect(computeMealSlot(todaysEvents, false)).toBe(4);
   });
 });
 

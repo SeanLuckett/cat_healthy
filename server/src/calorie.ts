@@ -79,6 +79,14 @@ export const gramsForMeal = (
 Today screen. A treat can still be logged manually with a typed-in grams
 value — it just won't have a computed suggestion. */
 
+export const computeMealSlot = (
+  todaysEvents: FeedingEvent[],
+  isTreat: boolean,
+): number | null => {
+  if (isTreat) return null;
+  return todaysEvents.filter((e) => !e.is_treat).length + 1;
+};
+
 const MIN_DAYS_BETWEEN_WEIGHINS = 3; // below this, day-to-day noise swamps the signal
 
 const daysBetweenDates = (a: string, b: string): number => {

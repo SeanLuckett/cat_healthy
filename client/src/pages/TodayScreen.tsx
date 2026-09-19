@@ -7,10 +7,14 @@ import {
   NumberInput,
   Select,
   Stack,
+  Table,
   Text,
   Title,
 } from "@mantine/core";
-import type { Food, StatusResponse } from "../../../shared/types";
+import type { Food, FeedingEvent, StatusResponse } from "../../../shared/types";
+import { mealSlotLabel } from "../mealSlot";
+
+const formatTime = (timestamp: string): string => timestamp.slice(11, 16);
 
 const flagBanner = (status: StatusResponse | null) => {
   if (!status?.progressFlag) return null;
@@ -41,10 +45,16 @@ const flagBanner = (status: StatusResponse | null) => {
 const TodayScreen = () => {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [foods, setFoods] = useState<Food[]>([]);
+  const [feedingEvents, setFeedingEvents] = useState<FeedingEvent[]>([]);
   const [selectedFoodId, setSelectedFoodId] = useState<string | null>(null);
   const [mealGrams, setMealGrams] = useState<number | "">("");
   const [treatGrams, setTreatGrams] = useState<number | "">("");
   const [error, setError] = useState<string | null>(null);
+
+  const refetchFeedings = async () => {
+    const res = await fetch("/api/feedings");
+    setFeedingEvents(await res.json());
+  };
 
   const refetch = async () => {
     const [statusRes, foodsRes] = await Promise.all([
@@ -53,6 +63,7 @@ const TodayScreen = () => {
     ]);
     setStatus(await statusRes.json());
     setFoods(await foodsRes.json());
+    await refetchFeedings();
   };
 
   useEffect(() => {
@@ -80,7 +91,6 @@ const TodayScreen = () => {
       body: JSON.stringify({
         food_id: Number(selectedFoodId),
         grams,
-        meal_slot: null,
         is_treat: isTreat,
       }),
     });
@@ -95,6 +105,7 @@ const TodayScreen = () => {
     } else {
       setMealGrams("");
     }
+    await refetchFeedings();
   };
 
   if (!status) return <Text>Loading…</Text>;
@@ -164,6 +175,35 @@ const TodayScreen = () => {
           Log treat
         </Button>
       </Group>
+
+      {feedingEvents.length === 0 ? (
+        <Text c="dimmed">No feedings logged yet today.</Text>
+      ) : (
+        <Table>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Time</Table.Th>
+              <Table.Th>Food</Table.Th>
+              <Table.Th>Grams</Table.Th>
+              <Table.Th>Type</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {feedingEvents.map((event) => (
+              <Table.Tr key={event.id}>
+                <Table.Td>{formatTime(event.timestamp)}</Table.Td>
+                <Table.Td>
+                  {foods.find((f) => f.id === event.food_id)?.name ?? "Unknown food"}
+                </Table.Td>
+                <Table.Td>{event.grams}</Table.Td>
+                <Table.Td>
+                  {event.is_treat ? "Treat" : mealSlotLabel(event.meal_slot)}
+                </Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      )}
     </Stack>
   );
 };
