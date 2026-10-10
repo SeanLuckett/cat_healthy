@@ -148,6 +148,41 @@ describe("TodayScreen", () => {
     expect(gramsInput).toHaveValue("");
   });
 
+  it("ignores repeat taps while a feeding is being logged", async () => {
+    mockApi();
+    // Hold the POST open (e.g. server waking up) until the test releases it.
+    let releasePost!: () => void;
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    const respond = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/feedings" && init?.method === "POST") {
+        return new Promise<void>((resolve) => {
+          releasePost = resolve;
+        }).then(() => respond(url, init));
+      }
+      return respond(url, init);
+    });
+    renderWithProvider(<TodayScreen />);
+    await waitFor(() => expect(screen.getByText(/120 kcal/)).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Log feeding (grams)"), "30");
+    const logButton = screen.getByRole("button", { name: "Log feeding" });
+    await user.click(logButton);
+    await user.click(logButton);
+    await user.click(logButton);
+
+    const posts = () =>
+      fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+    expect(posts()).toHaveLength(1);
+    expect(logButton).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Log treat" })).toBeDisabled();
+
+    releasePost();
+    await waitFor(() => expect(logButton).toBeEnabled());
+    expect(posts()).toHaveLength(1);
+  });
+
   it("shows the server error when logging a feeding fails", async () => {
     mockApi({}, { ok: false, body: { error: "Not enough remaining budget" } });
     renderWithProvider(<TodayScreen />);

@@ -50,6 +50,7 @@ const TodayScreen = () => {
   const [mealGrams, setMealGrams] = useState<number | "">("");
   const [treatGrams, setTreatGrams] = useState<number | "">("");
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const refetchFeedings = async () => {
     const res = await fetch("/api/feedings");
@@ -83,8 +84,9 @@ const TodayScreen = () => {
 
   const logFeeding = async (isTreat: boolean) => {
     const grams = isTreat ? treatGrams : mealGrams;
-    if (!selectedFoodId || grams === "" || grams <= 0) return;
+    if (submitting || !selectedFoodId || grams === "" || grams <= 0) return;
     setError(null);
+    setSubmitting(true);
     const res = await fetch("/api/feedings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -93,7 +95,7 @@ const TodayScreen = () => {
         grams,
         is_treat: isTreat,
       }),
-    });
+    }).finally(() => setSubmitting(false));
     if (!res.ok) {
       const body = await res.json();
       setError(body.error ?? "Failed to log feeding");
@@ -161,7 +163,9 @@ const TodayScreen = () => {
           onChange={(v) => setMealGrams(v === "" ? "" : Number(v))}
           min={0}
         />
-        <Button onClick={() => logFeeding(false)}>Log feeding</Button>
+        <Button loading={submitting} onClick={() => logFeeding(false)}>
+          Log feeding
+        </Button>
       </Group>
 
       <Group align="flex-end">
@@ -171,7 +175,11 @@ const TodayScreen = () => {
           onChange={(v) => setTreatGrams(v === "" ? "" : Number(v))}
           min={0}
         />
-        <Button variant="light" onClick={() => logFeeding(true)}>
+        <Button
+          variant="light"
+          loading={submitting}
+          onClick={() => logFeeding(true)}
+        >
           Log treat
         </Button>
       </Group>

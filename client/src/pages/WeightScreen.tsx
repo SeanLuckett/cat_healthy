@@ -58,6 +58,7 @@ const WeightScreen = () => {
   const [weightKg, setWeightKg] = useState<number | "">("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const refetchLogs = async () => {
     const res = await fetch("/api/weight");
@@ -80,13 +81,14 @@ const WeightScreen = () => {
   }, []);
 
   const addEntry = async () => {
-    if (weightKg === "" || weightKg <= 0 || !date) return;
+    if (submitting || weightKg === "" || weightKg <= 0 || !date) return;
     setError(null);
+    setSubmitting(true);
     const res = await fetch("/api/weight", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ date, weight_kg: weightKg, notes: notes || null }),
-    });
+    }).finally(() => setSubmitting(false));
     if (!res.ok) {
       const body = await res.json();
       setError(body.error ?? "Failed to log weight");
@@ -129,7 +131,9 @@ const WeightScreen = () => {
           value={notes}
           onChange={(e) => setNotes(e.currentTarget.value)}
         />
-        <Button onClick={addEntry}>Add entry</Button>
+        <Button loading={submitting} onClick={addEntry}>
+          Add entry
+        </Button>
       </Group>
 
       {logs.length === 0 ? (

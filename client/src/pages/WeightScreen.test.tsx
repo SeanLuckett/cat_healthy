@@ -138,6 +138,40 @@ describe("WeightScreen", () => {
     expect(screen.getByLabelText("Weight (kg)")).toHaveValue("");
   });
 
+  it("ignores repeat taps while a weigh-in is being added", async () => {
+    mockApi();
+    // Hold the POST open (e.g. server waking up) until the test releases it.
+    let releasePost!: () => void;
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    const respond = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/weight" && init?.method === "POST") {
+        return new Promise<void>((resolve) => {
+          releasePost = resolve;
+        }).then(() => respond(url, init));
+      }
+      return respond(url, init);
+    });
+    renderWithProvider(<WeightScreen />);
+    await waitFor(() => expect(screen.getByText("2026-09-01")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Weight (kg)"), "5");
+    const addButton = screen.getByRole("button", { name: "Add entry" });
+    await user.click(addButton);
+    await user.click(addButton);
+    await user.click(addButton);
+
+    const posts = () =>
+      fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+    expect(posts()).toHaveLength(1);
+    expect(addButton).toBeDisabled();
+
+    releasePost();
+    await waitFor(() => expect(addButton).toBeEnabled());
+    expect(posts()).toHaveLength(1);
+  });
+
   it("shows the server error when adding a weigh-in fails", async () => {
     mockApi({ postWeightResponse: { ok: false, body: { error: "Invalid weight" } } });
     renderWithProvider(<WeightScreen />);
