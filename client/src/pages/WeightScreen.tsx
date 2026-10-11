@@ -46,7 +46,17 @@ const flagBanner = (
   );
 };
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+// Neutral readout for when no banner is up — the banner already shows the
+// rate when there is one.
+const trendLine = (weeklyLossRate: number | null) => {
+  if (weeklyLossRate == null) {
+    return "Trend: not enough weigh-ins yet (needs 4 days of weigh-ins spanning 10+ days)";
+  }
+  const direction = weeklyLossRate >= 0 ? "losing" : "gaining";
+  return `Trend: ${direction} ${(Math.abs(weeklyLossRate) * 100).toFixed(1)}%/week`;
+};
+
+const todayIso = () =>new Date().toISOString().slice(0, 10);
 
 const WeightScreen = () => {
   const [logs, setLogs] = useState<WeightLog[]>([]);
@@ -104,7 +114,11 @@ const WeightScreen = () => {
     <Stack maw={480}>
       <Title order={2}>Weight</Title>
 
-      {flagBanner(progress.progressFlag, progress.weeklyLossRate)}
+      {flagBanner(progress.progressFlag, progress.weeklyLossRate) ?? (
+        <Text c="dimmed" size="sm">
+          {trendLine(progress.weeklyLossRate)}
+        </Text>
+      )}
 
       {error && (
         <Alert color="red" title="Error">

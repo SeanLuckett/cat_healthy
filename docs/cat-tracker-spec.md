@@ -214,32 +214,34 @@ function gramsForMeal(
 Today screen. A treat can still be logged manually with a typed-in grams
 value — it just won't have a computed suggestion. */
 
-const MIN_DAYS_BETWEEN_WEIGHINS = 3; // below this, day-to-day noise swamps the signal
+const EWMA_SPAN_DAYS = 10;
+const EWMA_ALPHA = 2 / (EWMA_SPAN_DAYS + 1); // same convention as pandas ewm(span=...)
+const TREND_WINDOW_DAYS = 7;
+const MIN_TREND_WEIGHIN_DAYS = 4; // warm-up: no rate until there's enough history
+const MIN_TREND_SPAN_DAYS = 10;
 
-function weeklyLossRate(logs: WeightLog[]): number | null {
-  const sorted = [...logs].sort((a, b) => a.date.localeCompare(b.date));
-  if (sorted.length < 2) return null;
+// Time-aware EWMA: the smoothing factor is compounded over the days since the
+// previous weigh-in, so irregular weigh-ins are weighted by elapsed time, not
+// by row. With daily weigh-ins this matches pandas ewm(span=10, adjust=False).
+// Same-day readings are averaged into one point.
+const weightEwma = (logs: WeightLog[]): EwmaPoint[] => {
+  // for each date in order:
+  //   alpha = 1 - (1 - EWMA_ALPHA) ** daysSincePrevious
+  //   ewma  = prevEwma + alpha * (weight - prevEwma)
+};
 
-  // Walk backward from the latest entry for the most recent prior one at
-  // least MIN_DAYS_BETWEEN_WEIGHINS away, rather than always using the
-  // immediately-preceding row — keeps a same-week check-in from getting
-  // multiplied up into a misleading weekly rate.
-  const curr = sorted[sorted.length - 1];
-  let prev: WeightLog | undefined;
-  for (let i = sorted.length - 2; i >= 0; i--) {
-    if (
-      daysBetweenDates(sorted[i].date, curr.date) >= MIN_DAYS_BETWEEN_WEIGHINS
-    ) {
-      prev = sorted[i];
-      break;
-    }
-  }
-  if (!prev) return null; // not enough spread between weigh-ins yet
-
-  const daysBetween = daysBetweenDates(prev.date, curr.date);
-  const pctChange = (prev.weight_kg - curr.weight_kg) / prev.weight_kg;
-  return (pctChange / daysBetween) * 7;
-}
+// Fraction of body weight lost per week (negative = gaining), measured as the
+// change in the smoothed EWMA over the last 7 days — never between two raw
+// weigh-ins, so one noisy reading can't flip the progress flag.
+const weeklyLossRate = (logs: WeightLog[]): number | null => {
+  const points = weightEwma(logs);
+  if (points.length < MIN_TREND_WEIGHIN_DAYS) return null;
+  if (span(points) < MIN_TREND_SPAN_DAYS) return null;
+  const latest = points.at(-1);
+  // EWMA holds between weigh-ins: use the last point on or before latest - 7d
+  const base = lastPointOnOrBefore(points, latest.date - TREND_WINDOW_DAYS);
+  return (base.ewma - latest.ewma) / base.ewma;
+};
 ```
 
 **Safety flag, not auto-correction**: `weeklyLossRate()` feeds a small
@@ -260,7 +262,9 @@ function progressFlag(
 
 `/api/status` includes `progressFlag` alongside `weeklyLossRate`. The UI
 banner (Today and Weight screens) renders for any non-null value —
-`too_fast`/`reversing` in red, `stalled` in yellow. As with the original
+`too_fast`/`reversing` in red, `stalled` in yellow. There is no "on track"
+banner; when no flag is set, the Weight screen shows a dimmed one-line trend
+readout instead (or a warm-up note while `weeklyLossRate` is null). As with the original
 `progressFlag`, the app never auto-adjusts `dailyTarget()` in response;
 any of these three states is a cue for the vet or `manual_override_kcal`,
 not an if-statement. (0.5%/week as the "stalled" cutoff is a starting

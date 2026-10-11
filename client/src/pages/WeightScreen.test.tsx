@@ -94,6 +94,34 @@ describe("WeightScreen", () => {
     expect(screen.queryByText("Progress stalled")).not.toBeInTheDocument();
   });
 
+  it.each([
+    [0.008, "Trend: losing 0.8%/week"],
+    [-0.005, "Trend: gaining 0.5%/week"],
+  ])("shows a neutral trend line for rate %s when there's no flag", async (weeklyLossRate, text) => {
+    mockApi({ weeklyLossRate });
+    renderWithProvider(<WeightScreen />);
+
+    await waitFor(() => expect(screen.getByText(text)).toBeInTheDocument());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows a warm-up message when there isn't enough data for a trend", async () => {
+    mockApi({ weeklyLossRate: null });
+    renderWithProvider(<WeightScreen />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/Trend: not enough weigh-ins yet/)).toBeInTheDocument(),
+    );
+  });
+
+  it("hides the trend line when a banner is already showing the rate", async () => {
+    mockApi({ progressFlag: "too_fast", weeklyLossRate: 0.03 });
+    renderWithProvider(<WeightScreen />);
+
+    await waitFor(() => expect(screen.getByText("Losing too fast")).toBeInTheDocument());
+    expect(screen.queryByText(/^Trend:/)).not.toBeInTheDocument();
+  });
+
   it("adds a weigh-in, refreshes the table, and updates the progress banner", async () => {
     mockApi({ progressFlag: "too_fast", weeklyLossRate: 0.04 });
     renderWithProvider(<WeightScreen />);

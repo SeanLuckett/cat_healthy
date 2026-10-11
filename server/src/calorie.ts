@@ -87,36 +87,80 @@ export const computeMealSlot = (
   return todaysEvents.filter((e) => !e.is_treat).length + 1;
 };
 
-const MIN_DAYS_BETWEEN_WEIGHINS = 3; // below this, day-to-day noise swamps the signal
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+const EWMA_SPAN_DAYS = 10;
+const EWMA_ALPHA = 2 / (EWMA_SPAN_DAYS + 1); // same convention as pandas ewm(span=...)
+const TREND_WINDOW_DAYS = 7;
+// Warm-up: an EWMA is seeded from its first reading, so with only a handful
+// of weigh-ins it mostly echoes the raw values back. Hold off on a rate (and
+// therefore any banner) until there's enough history for smoothing to mean
+// something.
+const MIN_TREND_WEIGHIN_DAYS = 4;
+const MIN_TREND_SPAN_DAYS = 10;
 
 const daysBetweenDates = (a: string, b: string): number => {
-  const msPerDay = 24 * 60 * 60 * 1000;
-  return Math.round((Date.parse(b) - Date.parse(a)) / msPerDay);
+  return Math.round((Date.parse(b) - Date.parse(a)) / MS_PER_DAY);
 };
 
-export const weeklyLossRate = (logs: WeightLog[]): number | null => {
-  const sorted = [...logs].sort((a, b) => a.date.localeCompare(b.date));
-  if (sorted.length < 2) return null;
+const shiftDate = (date: string, days: number): string => {
+  return new Date(Date.parse(date) + days * MS_PER_DAY)
+    .toISOString()
+    .slice(0, 10);
+};
 
-  // Walk backward from the latest entry for the most recent prior one at
-  // least MIN_DAYS_BETWEEN_WEIGHINS away, rather than always using the
-  // immediately-preceding row — keeps a same-week check-in from getting
-  // multiplied up into a misleading weekly rate.
-  const curr = sorted[sorted.length - 1];
-  let prev: WeightLog | undefined;
-  for (let i = sorted.length - 2; i >= 0; i--) {
-    if (
-      daysBetweenDates(sorted[i].date, curr.date) >= MIN_DAYS_BETWEEN_WEIGHINS
-    ) {
-      prev = sorted[i];
-      break;
-    }
+export interface EwmaPoint {
+  date: string;
+  ewma: number;
+}
+
+// Time-aware exponentially weighted moving average of weight. Weigh-ins are
+// irregular, so the smoothing factor is compounded over the days elapsed
+// since the previous weigh-in instead of applied once per row — with daily
+// weigh-ins this matches pandas ewm(span=10, adjust=False), and a reading
+// after a long gap pulls the average proportionally harder. Multiple
+// readings on the same date are averaged into one.
+export const weightEwma = (logs: WeightLog[]): EwmaPoint[] => {
+  const readingsByDate = new Map<string, number[]>();
+  for (const log of logs) {
+    const readings = readingsByDate.get(log.date) ?? [];
+    readings.push(log.weight_kg);
+    readingsByDate.set(log.date, readings);
   }
-  if (!prev) return null; // not enough spread between weigh-ins yet
 
-  const daysBetween = daysBetweenDates(prev.date, curr.date);
-  const pctChange = (prev.weight_kg - curr.weight_kg) / prev.weight_kg;
-  return (pctChange / daysBetween) * 7;
+  const points: EwmaPoint[] = [];
+  for (const date of [...readingsByDate.keys()].sort()) {
+    const readings = readingsByDate.get(date)!;
+    const weight = readings.reduce((sum, w) => sum + w, 0) / readings.length;
+    const prev = points[points.length - 1];
+    if (!prev) {
+      points.push({ date, ewma: weight });
+      continue;
+    }
+    const alpha =
+      1 - Math.pow(1 - EWMA_ALPHA, daysBetweenDates(prev.date, date));
+    points.push({ date, ewma: prev.ewma + alpha * (weight - prev.ewma) });
+  }
+  return points;
+};
+
+// Fraction of body weight lost per week (negative = gaining), measured on the
+// smoothed EWMA over the last TREND_WINDOW_DAYS rather than between two raw
+// weigh-ins, so a single noisy reading can't flip the progress flag.
+export const weeklyLossRate = (logs: WeightLog[]): number | null => {
+  const points = weightEwma(logs);
+  if (points.length < MIN_TREND_WEIGHIN_DAYS) return null;
+
+  const latest = points[points.length - 1];
+  if (daysBetweenDates(points[0].date, latest.date) < MIN_TREND_SPAN_DAYS) {
+    return null;
+  }
+
+  // The EWMA holds its value between weigh-ins, so its value a week ago is
+  // the point from the last weigh-in on or before that date.
+  const windowStart = shiftDate(latest.date, -TREND_WINDOW_DAYS);
+  const base = points.filter((p) => p.date <= windowStart).pop()!;
+  return (base.ewma - latest.ewma) / base.ewma;
 };
 
 export type ProgressFlag = "too_fast" | "stalled" | "reversing" | null;

@@ -6,6 +6,7 @@ import {
   gramsForMeal,
   computeMealSlot,
   weeklyLossRate,
+  weightEwma,
   progressFlag,
 } from "./calorie.js";
 import type { CatProfile, Food, FeedingEvent, WeightLog } from "../../shared/types";
@@ -152,49 +153,138 @@ describe("computeMealSlot", () => {
   });
 });
 
+const makeLogs = (entries: Array<[string, number]>): WeightLog[] =>
+  entries.map(([date, weight_kg], i) => ({ id: i + 1, date, weight_kg, notes: null }));
+
+// Daily weigh-ins losing a steady `perDay` kg, starting at `start` kg.
+const dailyLogs = (days: number, start: number, perDay: number): WeightLog[] =>
+  makeLogs(
+    Array.from({ length: days }, (_, i) => [
+      `2026-01-${String(i + 1).padStart(2, "0")}`,
+      start - perDay * i,
+    ]),
+  );
+
+describe("weightEwma", () => {
+  const alpha = 2 / 11; // span=10
+
+  it("seeds from the first reading", () => {
+    const points = weightEwma(makeLogs([["2026-01-01", 5.0]]));
+    expect(points).toEqual([{ date: "2026-01-01", ewma: 5.0 }]);
+  });
+
+  it("matches a per-row EWMA (pandas adjust=False) for daily weigh-ins", () => {
+    const points = weightEwma(
+      makeLogs([
+        ["2026-01-01", 5.0],
+        ["2026-01-02", 4.9],
+        ["2026-01-03", 5.1],
+      ]),
+    );
+    const e2 = 5.0 + alpha * (4.9 - 5.0);
+    const e3 = e2 + alpha * (5.1 - e2);
+    expect(points.map((p) => p.ewma)).toEqual([
+      5.0,
+      expect.closeTo(e2, 10),
+      expect.closeTo(e3, 10),
+    ]);
+  });
+
+  it("compounds the smoothing factor across a multi-day gap", () => {
+    const points = weightEwma(
+      makeLogs([
+        ["2026-01-01", 5.0],
+        ["2026-01-05", 4.8],
+      ]),
+    );
+    const a = 1 - Math.pow(1 - alpha, 4);
+    expect(points).toHaveLength(2);
+    expect(points[1].ewma).toBeCloseTo(5.0 + a * (4.8 - 5.0), 10);
+  });
+
+  it("averages multiple readings on the same date", () => {
+    const points = weightEwma(
+      makeLogs([
+        ["2026-01-01", 5.0],
+        ["2026-01-02", 4.8],
+        ["2026-01-02", 5.0],
+      ]),
+    );
+    expect(points).toHaveLength(2);
+    expect(points[1].ewma).toBeCloseTo(5.0 + alpha * (4.9 - 5.0), 10);
+  });
+
+  it("sorts input by date", () => {
+    const points = weightEwma(
+      makeLogs([
+        ["2026-01-03", 4.9],
+        ["2026-01-01", 5.0],
+      ]),
+    );
+    expect(points.map((p) => p.date)).toEqual(["2026-01-01", "2026-01-03"]);
+  });
+});
+
 describe("weeklyLossRate", () => {
-  it("returns null with fewer than 2 entries", () => {
-    const logs: WeightLog[] = [
-      { id: 1, date: "2026-01-01", weight_kg: 5, notes: null },
-    ];
+  it("returns null with fewer than 4 weigh-in days", () => {
+    const logs = makeLogs([
+      ["2026-01-01", 5.0],
+      ["2026-01-08", 4.95],
+      ["2026-01-15", 4.9],
+    ]);
     expect(weeklyLossRate(logs)).toBeNull();
   });
 
-  it("returns null if no prior entry is at least 3 days before the latest", () => {
-    const logs: WeightLog[] = [
-      { id: 1, date: "2026-01-01", weight_kg: 5.0, notes: null },
-      { id: 2, date: "2026-01-02", weight_kg: 4.98, notes: null },
-    ];
+  it("returns null when weigh-ins span fewer than 10 days", () => {
+    expect(weeklyLossRate(dailyLogs(10, 5.0, 0.01))).toBeNull(); // Jan 1–10 = 9 days
+    expect(weeklyLossRate(dailyLogs(11, 5.0, 0.01))).not.toBeNull();
+  });
+
+  it("returns null for two weigh-ins two days apart (the Oct 9/11 case)", () => {
+    const logs = makeLogs([
+      ["2026-10-09", 8.35],
+      ["2026-10-11", 8.18],
+    ]);
     expect(weeklyLossRate(logs)).toBeNull();
   });
 
-  it("computes a weekly percentage loss rate from the most recent qualifying pair", () => {
-    const logs: WeightLog[] = [
-      { id: 1, date: "2026-01-01", weight_kg: 5.0, notes: null },
-      { id: 2, date: "2026-01-08", weight_kg: 4.9, notes: null },
-    ];
-    // pctChange = (5.0-4.9)/5.0 = 0.02 over 7 days -> *7/7 = 0.02/week
-    expect(weeklyLossRate(logs)).toBeCloseTo(0.02, 5);
+  it("tracks a steady loss rate once the EWMA has warmed up", () => {
+    // 0.005 kg/day off ~5 kg ≈ 0.7%/week
+    const rate = weeklyLossRate(dailyLogs(30, 5.0, 0.005));
+    expect(rate).toBeGreaterThan(0.006);
+    expect(rate).toBeLessThan(0.008);
   });
 
-  it("skips a same-week check-in and uses the more distant prior entry", () => {
-    const logs: WeightLog[] = [
-      { id: 1, date: "2026-01-01", weight_kg: 5.0, notes: null },
-      { id: 2, date: "2026-01-08", weight_kg: 4.9, notes: null },
-      { id: 3, date: "2026-01-09", weight_kg: 4.89, notes: null }, // only 1 day later
-    ];
-    // Should use day 1 -> day 9 (8 days), not day 8 -> day 9 (1 day)
-    const rate = weeklyLossRate(logs);
-    const expectedPct = (5.0 - 4.89) / 5.0;
-    expect(rate).toBeCloseTo((expectedPct / 8) * 7, 5);
+  it("measures the EWMA change over the last 7 days", () => {
+    const logs = dailyLogs(14, 5.0, 0.01);
+    const points = weightEwma(logs);
+    expect(points).toHaveLength(14);
+    const latest = points[points.length - 1]; // Jan 14
+    const base = points.find((p) => p.date === "2026-01-07")!;
+    expect(weeklyLossRate(logs)).toBeCloseTo((base.ewma - latest.ewma) / base.ewma, 10);
+  });
+
+  it("uses the last weigh-in on or before the window start when none falls on it", () => {
+    const logs = makeLogs([
+      ["2026-01-01", 5.0],
+      ["2026-01-04", 4.98],
+      ["2026-01-09", 4.95],
+      ["2026-01-13", 4.92],
+    ]);
+    const points = weightEwma(logs);
+    expect(points).toHaveLength(4);
+    const base = points.find((p) => p.date === "2026-01-04")!; // window start is Jan 6
+    expect(weeklyLossRate(logs)).toBeCloseTo((base.ewma - points[3].ewma) / base.ewma, 10);
+  });
+
+  it("doesn't let one high reading flip a downward trend to gaining", () => {
+    const logs = dailyLogs(20, 5.0, 0.007);
+    logs.push({ id: 99, date: "2026-01-21", weight_kg: 5.0, notes: null }); // +0.14 kg spike
+    expect(weeklyLossRate(logs)).toBeGreaterThan(0);
   });
 
   it("returns a negative rate when weight increases (reversing)", () => {
-    const logs: WeightLog[] = [
-      { id: 1, date: "2026-01-01", weight_kg: 5.0, notes: null },
-      { id: 2, date: "2026-01-08", weight_kg: 5.1, notes: null },
-    ];
-    expect(weeklyLossRate(logs)).toBeLessThan(0);
+    expect(weeklyLossRate(dailyLogs(14, 5.0, -0.01))).toBeLessThan(0);
   });
 });
 
