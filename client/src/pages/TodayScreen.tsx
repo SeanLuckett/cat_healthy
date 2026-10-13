@@ -12,7 +12,6 @@ import {
   Title,
 } from "@mantine/core";
 import type { Food, FeedingEvent, StatusResponse } from "../../../shared/types";
-import { mealSlotLabel } from "../mealSlot";
 
 const formatTime = (timestamp: string): string => timestamp.slice(11, 16);
 
@@ -164,7 +163,7 @@ const TodayScreen = () => {
           {status.remainingKcal.toFixed(0)} kcal
         </Text>
         <Text size="sm" c="dimmed">
-          {status.mealsLeftToday} meal(s) left
+          {status.feedingsLeftToday} feeding(s) left
         </Text>
       </Card>
 
@@ -176,8 +175,20 @@ const TodayScreen = () => {
       />
 
       {suggestedGrams != null && (
+        <Button
+          variant="subtle"
+          size="compact-sm"
+          style={{ alignSelf: "flex-start" }}
+          onClick={() => setMealGrams(Number(suggestedGrams.toFixed(1)))}
+        >
+          Next serving: {suggestedGrams.toFixed(1)} g
+        </Button>
+      )}
+
+      {selectedFood && status.remainingKcal > 0 && (
         <Text size="sm" c="dimmed">
-          Suggested: {suggestedGrams.toFixed(1)} g for this meal
+          Rest of today:{" "}
+          {(status.remainingKcal / selectedFood.kcal_per_gram).toFixed(1)} g
         </Text>
       )}
 
@@ -244,7 +255,7 @@ const TodayScreen = () => {
                 </Table.Td>
                 <Table.Td>{event.grams}</Table.Td>
                 <Table.Td>
-                  {event.is_treat ? "Treat" : mealSlotLabel(event.meal_slot)}
+                  {event.is_treat ? "Treat" : "Feeding"}
                 </Table.Td>
               </Table.Tr>
             ))}

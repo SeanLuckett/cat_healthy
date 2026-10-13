@@ -3,8 +3,8 @@ import {
   rer,
   dailyTarget,
   remainingBudget,
-  gramsForMeal,
-  computeMealSlot,
+  gramsForServing,
+  feedingsLeft,
   weeklyLossRate,
   weightEwma,
   progressFlag,
@@ -91,8 +91,8 @@ describe("remainingBudget", () => {
 
   it("subtracts consumed kcal from the daily target", () => {
     const events: FeedingEvent[] = [
-      { id: 1, timestamp: "2026-01-01T08:00:00", food_id: 1, grams: 50, meal_slot: 1, is_treat: false },
-      { id: 2, timestamp: "2026-01-01T12:00:00", food_id: 2, grams: 25, meal_slot: 2, is_treat: false },
+      { id: 1, timestamp: "2026-01-01T08:00:00", food_id: 1, grams: 50, is_treat: false },
+      { id: 2, timestamp: "2026-01-01T12:00:00", food_id: 2, grams: 25, is_treat: false },
     ];
     // consumed = 50*1.0 + 25*0.8 = 70
     expect(remainingBudget(200, events, foods)).toBeCloseTo(130, 5);
@@ -103,53 +103,67 @@ describe("remainingBudget", () => {
   });
 });
 
-describe("gramsForMeal", () => {
+describe("gramsForServing", () => {
   const food: Food = { id: 1, name: "Wet A", kcal_per_gram: 1.0, category: "wet", notes: null };
 
-  it("splits remaining kcal evenly across meals left", () => {
-    expect(gramsForMeal(100, 2, food)).toBeCloseTo(50, 5);
+  it("splits remaining kcal evenly across feedings left", () => {
+    expect(gramsForServing(100, 2, food)).toBeCloseTo(50, 5);
   });
 
-  it("returns null when there are no meals left", () => {
-    expect(gramsForMeal(100, 0, food)).toBeNull();
+  it("returns null when there are no feedings left", () => {
+    expect(gramsForServing(100, 0, food)).toBeNull();
+  });
+
+  it("returns null when the day's budget is used up", () => {
+    expect(gramsForServing(0, 2, food)).toBeNull();
+    expect(gramsForServing(-10, 2, food)).toBeNull();
   });
 });
 
-describe("computeMealSlot", () => {
-  const makeEvent = (overrides: Partial<FeedingEvent> = {}): FeedingEvent => ({
+describe("feedingsLeft", () => {
+  const times = ["07:00", "12:00", "18:00"];
+  const fedAt = (time: string, isTreat = false): FeedingEvent => ({
     id: 1,
-    timestamp: "2026-01-01T08:00:00",
+    timestamp: `2026-01-01 ${time}:00`,
     food_id: 1,
-    grams: 50,
-    meal_slot: 1,
-    is_treat: false,
-    ...overrides,
+    grams: 30,
+    is_treat: isTreat,
   });
 
-  it("returns null for a treat, even with existing non-treat events today", () => {
-    const todaysEvents = [makeEvent({ id: 1, meal_slot: 1, is_treat: false })];
-    expect(computeMealSlot(todaysEvents, true)).toBeNull();
+  it("counts every feeding before the first feeding time", () => {
+    expect(feedingsLeft([], "06:00", times)).toBe(3);
   });
 
-  it("returns 1 for the first non-treat feeding of an empty day", () => {
-    expect(computeMealSlot([], false)).toBe(1);
+  it("counts the current feeding plus later ones when nothing's been served yet", () => {
+    expect(feedingsLeft([], "08:00", times)).toBe(3);
+    expect(feedingsLeft([fedAt("08:00")], "13:00", times)).toBe(2);
+    expect(feedingsLeft([fedAt("08:00"), fedAt("12:30")], "19:00", times)).toBe(1);
   });
 
-  it("counts only non-treat events when numbering the next meal", () => {
-    const todaysEvents = [
-      makeEvent({ id: 1, meal_slot: 1, is_treat: false }),
-      makeEvent({ id: 2, meal_slot: null, is_treat: true }),
-    ];
-    expect(computeMealSlot(todaysEvents, false)).toBe(2);
+  it("drops the current feeding once food has been served in its window", () => {
+    expect(feedingsLeft([fedAt("07:30")], "08:00", times)).toBe(2);
   });
 
-  it("is uncapped — does not clamp to MEALS_PER_DAY", () => {
-    const todaysEvents = [
-      makeEvent({ id: 1, meal_slot: 1, is_treat: false }),
-      makeEvent({ id: 2, meal_slot: 2, is_treat: false }),
-      makeEvent({ id: 3, meal_slot: 3, is_treat: false }),
-    ];
-    expect(computeMealSlot(todaysEvents, false)).toBe(4);
+  it("doesn't count top-ups in the same window as extra feedings", () => {
+    const events = [fedAt("07:10"), fedAt("08:30"), fedAt("10:15")];
+    expect(feedingsLeft(events, "11:00", times)).toBe(2);
+  });
+
+  it("counts food served early (before the first time) toward the first feeding", () => {
+    expect(feedingsLeft([fedAt("06:30")], "06:45", times)).toBe(2);
+    expect(feedingsLeft([fedAt("06:30")], "08:00", times)).toBe(2);
+  });
+
+  it("ignores treats", () => {
+    expect(feedingsLeft([fedAt("07:30", true)], "08:00", times)).toBe(3);
+  });
+
+  it("is 0 after the last feeding has been served", () => {
+    expect(feedingsLeft([fedAt("18:05")], "21:00", times)).toBe(0);
+  });
+
+  it("still offers the last feeding late at night if it was never served", () => {
+    expect(feedingsLeft([], "23:30", times)).toBe(1);
   });
 });
 

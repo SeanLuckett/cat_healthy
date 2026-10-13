@@ -14,7 +14,7 @@ const baseStatus: StatusResponse = {
   dailyTargetKcal: 250,
   belowSafeFloor: false,
   remainingKcal: 120,
-  mealsLeftToday: 2,
+  feedingsLeftToday: 2,
   suggestedGramsPerFood: { 1: 45.5, 2: 15 },
   weeklyLossRate: null,
   progressFlag: null,
@@ -67,7 +67,7 @@ describe("TodayScreen", () => {
     expect(screen.getByText("Loading…")).toBeInTheDocument();
 
     await waitFor(() => expect(screen.getByText(/120 kcal/)).toBeInTheDocument());
-    expect(screen.getByText(/2 meal\(s\) left/)).toBeInTheDocument();
+    expect(screen.getByText(/2 feeding\(s\) left/)).toBeInTheDocument();
   });
 
   it("defaults the food selection to the first food and shows its suggested grams", async () => {
@@ -75,7 +75,7 @@ describe("TodayScreen", () => {
     renderWithProvider(<TodayScreen />);
 
     await waitFor(() => expect(screen.getByText(/45.5 g/)).toBeInTheDocument());
-    expect(screen.getByDisplayValue("Chicken Pate")).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("Chicken Pate")).toBeInTheDocument();
   });
 
   it("updates the suggested grams when a different food is selected", async () => {
@@ -88,6 +88,60 @@ describe("TodayScreen", () => {
     await user.click(await screen.findByRole("option", { name: "Kibble" }));
 
     await waitFor(() => expect(screen.getByText(/15.0 g/)).toBeInTheDocument());
+  });
+
+  it("shows the next serving and the rest of today's budget in grams", async () => {
+    mockApi();
+    renderWithProvider(<TodayScreen />);
+
+    // 120 kcal remaining / 1.2 kcal/g = 100 g for the rest of the day.
+    await waitFor(() =>
+      expect(screen.getByText("Next serving: 45.5 g")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Rest of today: 100.0 g")).toBeInTheDocument();
+  });
+
+  it("recomputes the rest of today's grams for the selected food", async () => {
+    mockApi();
+    renderWithProvider(<TodayScreen />);
+    await waitFor(() => expect(screen.getByText(/120 kcal/)).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("textbox", { name: "Food" }));
+    await user.click(await screen.findByRole("option", { name: "Kibble" }));
+
+    // 120 / 3.5 ≈ 34.3 g
+    await waitFor(() =>
+      expect(screen.getByText("Rest of today: 34.3 g")).toBeInTheDocument(),
+    );
+  });
+
+  it("fills the feeding grams input when the next serving is tapped", async () => {
+    mockApi();
+    renderWithProvider(<TodayScreen />);
+    await waitFor(() => expect(screen.getByText(/120 kcal/)).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Next serving: 45.5 g" }));
+
+    expect(screen.getByLabelText("Log feeding (grams)")).toHaveValue("45.5");
+  });
+
+  it("hides the next serving when there are no feedings left, but keeps the rest of today", async () => {
+    mockApi({ feedingsLeftToday: 0, suggestedGramsPerFood: { 1: null, 2: null } });
+    renderWithProvider(<TodayScreen />);
+    await waitFor(() => expect(screen.getByText(/120 kcal/)).toBeInTheDocument());
+
+    expect(await screen.findByText("Rest of today: 100.0 g")).toBeInTheDocument();
+    expect(screen.queryByText(/Next serving/)).not.toBeInTheDocument();
+  });
+
+  it("hides the rest of today once the budget is used up", async () => {
+    mockApi({ remainingKcal: -5, suggestedGramsPerFood: { 1: null, 2: null } });
+    renderWithProvider(<TodayScreen />);
+    await waitFor(() => expect(screen.getByText(/-5 kcal/)).toBeInTheDocument());
+
+    expect(screen.queryByText(/Rest of today/)).not.toBeInTheDocument();
   });
 
   it.each([
@@ -272,7 +326,6 @@ describe("TodayScreen", () => {
         timestamp: "2026-01-01 08:05:00",
         food_id: 1,
         grams: 40,
-        meal_slot: 1,
         is_treat: false,
       },
       {
@@ -280,7 +333,6 @@ describe("TodayScreen", () => {
         timestamp: "2026-01-01 15:30:00",
         food_id: 2,
         grams: 5,
-        meal_slot: null,
         is_treat: true,
       },
     ];
@@ -294,7 +346,7 @@ describe("TodayScreen", () => {
     expect(table.getByText("15:30")).toBeInTheDocument();
     expect(table.getByText("Chicken Pate")).toBeInTheDocument();
     expect(table.getByText("Kibble")).toBeInTheDocument();
-    expect(table.getByText("Breakfast")).toBeInTheDocument();
+    expect(table.getByText("Feeding")).toBeInTheDocument();
     expect(table.getByText("Treat")).toBeInTheDocument();
   });
 });

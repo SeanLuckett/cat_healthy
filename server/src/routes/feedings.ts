@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { db } from "../db.js";
-import { computeStatus, getAllFoods, getTodaysFeedingEvents } from "./status.js";
-import { computeMealSlot } from "../calorie.js";
+import { computeStatus, getAllFoods } from "./status.js";
 
 export const feedingsRouter = Router();
 
@@ -38,16 +37,10 @@ feedingsRouter.post("/api/feedings", (req, res) => {
     return res.status(400).json({ error: `food_id ${food_id} does not exist` });
   }
 
-  const isTreat = Boolean(is_treat);
-  // Not transactional — a race between concurrent POSTs could double-assign
-  // a slot number, but this is a single-user local app so it's not worth
-  // wrapping in a transaction for now.
-  const mealSlot = computeMealSlot(getTodaysFeedingEvents(), isTreat);
-
   db.prepare(
-    `INSERT INTO feeding_events (timestamp, food_id, grams, meal_slot, is_treat)
-     VALUES (datetime('now', 'localtime'), ?, ?, ?, ?)`,
-  ).run(food_id, grams, mealSlot, isTreat ? 1 : 0);
+    `INSERT INTO feeding_events (timestamp, food_id, grams, is_treat)
+     VALUES (datetime('now', 'localtime'), ?, ?, ?)`,
+  ).run(food_id, grams, is_treat ? 1 : 0);
 
   try {
     res.json(computeStatus());

@@ -29,7 +29,7 @@ db.exec(`
     timestamp TEXT NOT NULL,
     food_id INTEGER NOT NULL REFERENCES foods(id),
     grams REAL NOT NULL,
-    meal_slot INTEGER,
+    meal_slot INTEGER, -- legacy, no longer written (see docs/grazing-plan.md)
     is_treat INTEGER NOT NULL DEFAULT 0
   );
 

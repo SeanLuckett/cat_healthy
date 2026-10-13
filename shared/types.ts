@@ -18,7 +18,6 @@ export interface FeedingEvent {
   timestamp: string; // ISO datetime
   food_id: number;
   grams: number;
-  meal_slot: number | null;
   is_treat: boolean;
 }
 
@@ -38,7 +37,7 @@ export interface StatusResponse {
   dailyTargetKcal: number;
   belowSafeFloor: boolean;
   remainingKcal: number;
-  mealsLeftToday: number;
+  feedingsLeftToday: number;
   suggestedGramsPerFood: Record<number, number | null>;
   weeklyLossRate: number | null;
   progressFlag: ProgressFlag;

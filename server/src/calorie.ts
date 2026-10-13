@@ -65,26 +65,43 @@ export const remainingBudget = (
   return dailyTargetKcal - consumed;
 };
 
-export const gramsForMeal = (
+export const gramsForServing = (
   remainingKcal: number,
-  mealsLeftToday: number,
+  feedingsLeftToday: number,
   selectedFood: Food,
 ): number | null => {
-  if (mealsLeftToday <= 0) return null; // no meals left to suggest a portion for
-  const kcalThisMeal = remainingKcal / mealsLeftToday;
-  return kcalThisMeal / selectedFood.kcal_per_gram;
+  if (feedingsLeftToday <= 0) return null; // no feedings left to suggest a portion for
+  if (remainingKcal <= 0) return null; // budget used up — nothing to suggest
+  const kcalThisServing = remainingKcal / feedingsLeftToday;
+  return kcalThisServing / selectedFood.kcal_per_gram;
 };
 
-/* UI note: when gramsForMeal returns `null`, hide the suggested-grams readout on the
+/* UI note: when gramsForServing returns `null`, hide the suggested-grams readout on the
 Today screen. A treat can still be logged manually with a typed-in grams
 value — it just won't have a computed suggestion. */
 
-export const computeMealSlot = (
+// Planned feeding times, local "HH:MM". Mac grazes — he eats part of a
+// serving and comes back to the rest — so these aren't strict meals, just
+// how the day's budget is split. Each time opens a window that runs until
+// the next time (the first window also reaches back to midnight), and
+// everything served in a window, top-ups included, counts as one feeding.
+export const FEEDING_TIMES = ["07:00", "12:00", "18:00"];
+
+const feedingWindow = (time: string, feedingTimes: string[]): number =>
+  feedingTimes.slice(1).filter((t) => t <= time).length;
+
+export const feedingsLeft = (
   todaysEvents: FeedingEvent[],
-  isTreat: boolean,
-): number | null => {
-  if (isTreat) return null;
-  return todaysEvents.filter((e) => !e.is_treat).length + 1;
+  now: string, // local "HH:MM"
+  feedingTimes: string[] = FEEDING_TIMES,
+): number => {
+  const currentWindow = feedingWindow(now, feedingTimes);
+  const servedThisWindow = todaysEvents.some(
+    (e) =>
+      !e.is_treat &&
+      feedingWindow(e.timestamp.slice(11, 16), feedingTimes) === currentWindow,
+  );
+  return feedingTimes.length - currentWindow - (servedThisWindow ? 1 : 0);
 };
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;

@@ -37,7 +37,7 @@ cat-tracker/
 │   │   ├── index.ts          # Express app, binds 0.0.0.0
 │   │   ├── db.ts             # better-sqlite3 setup + schema migrations
 │   │   ├── calorie.ts        # rer(), dailyTarget(), remainingBudget(),
-│   │   │                     # gramsForMeal(), weeklyLossRate()
+│   │   │                     # gramsForServing(), weeklyLossRate()
 │   │   └── routes/
 │   │       ├── foods.ts
 │   │       ├── feedings.ts
@@ -105,7 +105,7 @@ CREATE TABLE feeding_events (
   timestamp TEXT NOT NULL,        -- ISO datetime
   food_id INTEGER NOT NULL REFERENCES foods(id),
   grams REAL NOT NULL,
-  meal_slot INTEGER,              -- 1..N, NULL for treats/ad hoc
+  meal_slot INTEGER,              -- legacy, no longer written (see FEEDING_TIMES)
   is_treat INTEGER NOT NULL DEFAULT 0
 );
 
@@ -128,8 +128,12 @@ section below.
 `foods` and `cat_profile` are populated directly via `sqlite3 cat.db` for
 MVP — no admin UI. Do not build a food-entry screen yet.
 
-`MEALS_PER_DAY` is a server-side TypeScript constant (default `3`), not a
-database value and not user-configurable in the UI. Changing meal count is a
+`FEEDING_TIMES` (in `calorie.ts`, default `["07:00", "12:00", "18:00"]`) is a
+server-side TypeScript constant, not a database value and not
+user-configurable in the UI. Mac grazes, so entries aren't tied to meals:
+each time opens a window running to the next time (the first also reaches
+back to midnight), and everything served in a window — top-ups included —
+counts as one feeding. Changing the schedule is a
 one-line code edit + restart.
 
 ## Calorie engine (`server/src/calorie.ts`)
@@ -200,17 +204,18 @@ function remainingBudget(
   return dailyTargetKcal - consumed;
 }
 
-function gramsForMeal(
+function gramsForServing(
   remainingKcal: number,
-  mealsLeftToday: number,
+  feedingsLeftToday: number, // from feedingsLeft(todaysEvents, now)
   selectedFood: Food,
 ): number | null {
-  if (mealsLeftToday <= 0) return null; // no meals left to suggest a portion for
-  const kcalThisMeal = remainingKcal / mealsLeftToday;
-  return kcalThisMeal / selectedFood.kcal_per_gram;
+  if (feedingsLeftToday <= 0) return null; // no feedings left to suggest a portion for
+  if (remainingKcal <= 0) return null; // budget used up
+  const kcalThisServing = remainingKcal / feedingsLeftToday;
+  return kcalThisServing / selectedFood.kcal_per_gram;
 }
 
-/* UI note: when gramsForMeal returns `null`, hide the suggested-grams readout on the
+/* UI note: when gramsForServing returns `null`, hide the suggested-grams readout on the
 Today screen. A treat can still be logged manually with a typed-in grams
 value — it just won't have a computed suggestion. */
 
@@ -323,8 +328,8 @@ phones without double-feeding him.
 | Method | Path                            | Purpose                                                                        |
 | ------ | ------------------------------- | ------------------------------------------------------------------------------ |
 | GET    | `/api/foods`                    | List all foods                                                                 |
-| GET    | `/api/status`                   | Today's target, remaining budget, meals left, `weeklyLossRate`, `progressFlag` |
-| POST   | `/api/feedings`                 | Log a feeding event (meal or treat); returns updated `/api/status`             |
+| GET    | `/api/status`                   | Today's target, remaining budget, feedings left, `weeklyLossRate`, `progressFlag` |
+| POST   | `/api/feedings`                 | Log a feeding event (food or treat); returns updated `/api/status`             |
 | GET    | `/api/feedings?date=YYYY-MM-DD` | List feeding events for a date (defaults to today)                             |
 | GET    | `/api/weight`                   | List weight log entries, most recent first                                     |
 | POST   | `/api/weight`                   | Log a new weight entry; returns updated `weeklyLossRate`                       |
@@ -342,14 +347,17 @@ on either — delete and re-log is simpler than partial-edit UI for MVP.
 
 **Today screen** (primary/default view):
 
-- Remaining calorie budget for the day, and how many meals are left.
+- Remaining calorie budget for the day, and how many feedings are left.
 - If `progressFlag` is set, a visible banner with the current rate.
-- Food dropdown (from `/api/foods`) → shows computed grams for this meal
-  given remaining budget and meals left.
-- "Log feeding" input: enter actual grams fed → posts to `/api/feedings`,
-  recalculates and re-displays remaining budget/meals immediately.
+- Food dropdown (from `/api/foods`) → shows "Next serving" grams (remaining
+  budget split across feedings left; tapping it fills the grams input) and
+  "Rest of today" grams (the whole remaining budget in that food).
+- "Log feeding" input: enter grams put in the bowl → posts to
+  `/api/feedings`, recalculates and re-displays remaining budget/feedings
+  immediately. Top-ups are just more entries. A kcal preview under the
+  input shows what the entry is worth and what it leaves for today.
 - Separate "log a treat" affordance: same food-picker + grams flow, posts
-  with `is_treat: true` and no `meal_slot`.
+  with `is_treat: true`.
 
 **Weight screen**:
 
@@ -379,7 +387,7 @@ on either — delete and re-log is simpler than partial-edit UI for MVP.
 2. `server/src/db.ts`: schema creation, seed script for `cat_profile` (one
    row) and a couple of sample `foods` rows for local testing.
 3. `server/src/calorie.ts` with unit tests for `rer`, `dailyTarget`,
-   `remainingBudget`, `gramsForMeal`, `weeklyLossRate` — these are pure
+   `remainingBudget`, `gramsForServing`, `feedingsLeft`, `weeklyLossRate` — these are pure
    functions and the easiest place to catch math errors before they reach
    the UI.
 4. API routes, wired to the calorie engine.

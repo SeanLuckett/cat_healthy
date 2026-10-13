@@ -3,7 +3,8 @@ import { db } from "../db.js";
 import {
   dailyTarget,
   remainingBudget,
-  gramsForMeal,
+  gramsForServing,
+  feedingsLeft,
   weeklyLossRate,
   progressFlag,
 } from "../calorie.js";
@@ -14,8 +15,6 @@ import type {
   WeightLog,
   StatusResponse,
 } from "../../../shared/types";
-
-const MEALS_PER_DAY = 3;
 
 export const getAllFoods = (): Food[] => {
   return db.prepare("SELECT * FROM foods").all() as Food[];
@@ -55,6 +54,14 @@ export const getTodaysFeedingEvents = (): FeedingEvent[] => {
   return rows.map((r) => ({ ...r, is_treat: Boolean(r.is_treat) }));
 };
 
+// Local "HH:MM", matching the datetime('now', 'localtime') timestamps
+// feeding_events are written with.
+const localTimeNow = (): string => {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+};
+
 export const computeStatus = (): StatusResponse => {
   const profile = getProfile();
   const latestWeight = getLatestWeight();
@@ -77,14 +84,13 @@ export const computeStatus = (): StatusResponse => {
   const foods = getAllFoods();
   const todaysEvents = getTodaysFeedingEvents();
   const remainingKcal = remainingBudget(dailyTargetKcal, todaysEvents, foods);
-  const mealsEaten = todaysEvents.filter((e) => !e.is_treat).length;
-  const mealsLeftToday = Math.max(0, MEALS_PER_DAY - mealsEaten);
+  const feedingsLeftToday = feedingsLeft(todaysEvents, localTimeNow());
 
   const suggestedGramsPerFood: Record<number, number | null> = {};
   for (const food of foods) {
-    suggestedGramsPerFood[food.id] = gramsForMeal(
+    suggestedGramsPerFood[food.id] = gramsForServing(
       remainingKcal,
-      mealsLeftToday,
+      feedingsLeftToday,
       food,
     );
   }
@@ -97,7 +103,7 @@ export const computeStatus = (): StatusResponse => {
     dailyTargetKcal,
     belowSafeFloor,
     remainingKcal,
-    mealsLeftToday,
+    feedingsLeftToday,
     suggestedGramsPerFood,
     weeklyLossRate: lossRate,
     progressFlag: flag,
