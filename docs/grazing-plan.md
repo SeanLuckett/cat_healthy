@@ -65,5 +65,5 @@ can be checked by hand in the app before the next one starts.
 ## Progress
 
 - [x] Step 1 (merged)
-- [x] Step 2 (awaiting manual review)
+- [x] Step 2 (merged)
 - [ ] Step 3
