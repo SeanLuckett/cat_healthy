@@ -197,6 +197,66 @@ describe("TodayScreen", () => {
     );
   });
 
+  describe("kcal preview", () => {
+    it("shows nothing until grams are entered", async () => {
+      mockApi();
+      renderWithProvider(<TodayScreen />);
+      await waitFor(() => expect(screen.getByText(/120 kcal/)).toBeInTheDocument());
+
+      expect(screen.queryByText(/leaves .* kcal today/)).not.toBeInTheDocument();
+    });
+
+    it("shows the kcal for the entered feeding grams and what's left after", async () => {
+      mockApi();
+      renderWithProvider(<TodayScreen />);
+      await waitFor(() => expect(screen.getByText(/120 kcal/)).toBeInTheDocument());
+
+      const user = userEvent.setup();
+      await user.type(screen.getByLabelText("Log feeding (grams)"), "30");
+
+      // Chicken Pate is 1.2 kcal/g: 30 g = 36 kcal, 120 - 36 = 84 left.
+      expect(screen.getByText("30 g = 36 kcal · leaves 84 kcal today")).toBeInTheDocument();
+    });
+
+    it("shows the kcal for the entered treat grams", async () => {
+      mockApi();
+      renderWithProvider(<TodayScreen />);
+      await waitFor(() => expect(screen.getByText(/120 kcal/)).toBeInTheDocument());
+
+      const user = userEvent.setup();
+      await user.type(screen.getByLabelText("Log a treat (grams)"), "5");
+
+      expect(screen.getByText("5 g = 6 kcal · leaves 114 kcal today")).toBeInTheDocument();
+    });
+
+    it("uses the selected food's kcal per gram", async () => {
+      mockApi();
+      renderWithProvider(<TodayScreen />);
+      await waitFor(() => expect(screen.getByText(/120 kcal/)).toBeInTheDocument());
+
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("textbox", { name: "Food" }));
+      await user.click(await screen.findByRole("option", { name: "Kibble" }));
+      await user.type(screen.getByLabelText("Log feeding (grams)"), "10");
+
+      expect(screen.getByText("10 g = 35 kcal · leaves 85 kcal today")).toBeInTheDocument();
+    });
+
+    it("flags an entry that would go over today's budget", async () => {
+      mockApi();
+      renderWithProvider(<TodayScreen />);
+      await waitFor(() => expect(screen.getByText(/120 kcal/)).toBeInTheDocument());
+
+      const user = userEvent.setup();
+      await user.type(screen.getByLabelText("Log feeding (grams)"), "110");
+
+      // 110 g = 132 kcal, 12 more than the 120 remaining.
+      expect(
+        screen.getByText("110 g = 132 kcal · 12 kcal over today's budget"),
+      ).toBeInTheDocument();
+    });
+  });
+
   it("shows an empty state when no feedings have been logged today", async () => {
     mockApi();
     renderWithProvider(<TodayScreen />);

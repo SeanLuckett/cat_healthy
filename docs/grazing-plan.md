@@ -64,6 +64,6 @@ can be checked by hand in the app before the next one starts.
 
 ## Progress
 
-- [ ] Step 1
+- [x] Step 1 (awaiting manual review)
 - [ ] Step 2
 - [ ] Step 3

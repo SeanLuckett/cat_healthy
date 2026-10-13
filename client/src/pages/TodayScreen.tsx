@@ -42,6 +42,29 @@ const flagBanner = (status: StatusResponse | null) => {
   );
 };
 
+const KcalPreview = ({
+  grams,
+  food,
+  remainingKcal,
+}: {
+  grams: number | "";
+  food: Food | undefined;
+  remainingKcal: number;
+}) => {
+  if (!food || grams === "" || grams <= 0) return null;
+  const kcal = grams * food.kcal_per_gram;
+  const left = remainingKcal - kcal;
+  const over = Math.round(left) < 0;
+  return (
+    <Text size="sm" c={over ? "red" : "dimmed"}>
+      {grams} g = {kcal.toFixed(0)} kcal ·{" "}
+      {over
+        ? `${(-left).toFixed(0)} kcal over today's budget`
+        : `leaves ${left.toFixed(0)} kcal today`}
+    </Text>
+  );
+};
+
 const TodayScreen = () => {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [foods, setFoods] = useState<Food[]>([]);
@@ -81,6 +104,8 @@ const TodayScreen = () => {
     status && selectedFoodId
       ? status.suggestedGramsPerFood[Number(selectedFoodId)]
       : null;
+
+  const selectedFood = foods.find((f) => String(f.id) === selectedFoodId);
 
   const logFeeding = async (isTreat: boolean) => {
     const grams = isTreat ? treatGrams : mealGrams;
@@ -156,33 +181,47 @@ const TodayScreen = () => {
         </Text>
       )}
 
-      <Group align="flex-end">
-        <NumberInput
-          label="Log feeding (grams)"
-          value={mealGrams}
-          onChange={(v) => setMealGrams(v === "" ? "" : Number(v))}
-          min={0}
+      <Stack gap={4}>
+        <Group align="flex-end">
+          <NumberInput
+            label="Log feeding (grams)"
+            value={mealGrams}
+            onChange={(v) => setMealGrams(v === "" ? "" : Number(v))}
+            min={0}
+          />
+          <Button loading={submitting} onClick={() => logFeeding(false)}>
+            Log feeding
+          </Button>
+        </Group>
+        <KcalPreview
+          grams={mealGrams}
+          food={selectedFood}
+          remainingKcal={status.remainingKcal}
         />
-        <Button loading={submitting} onClick={() => logFeeding(false)}>
-          Log feeding
-        </Button>
-      </Group>
+      </Stack>
 
-      <Group align="flex-end">
-        <NumberInput
-          label="Log a treat (grams)"
-          value={treatGrams}
-          onChange={(v) => setTreatGrams(v === "" ? "" : Number(v))}
-          min={0}
+      <Stack gap={4}>
+        <Group align="flex-end">
+          <NumberInput
+            label="Log a treat (grams)"
+            value={treatGrams}
+            onChange={(v) => setTreatGrams(v === "" ? "" : Number(v))}
+            min={0}
+          />
+          <Button
+            variant="light"
+            loading={submitting}
+            onClick={() => logFeeding(true)}
+          >
+            Log treat
+          </Button>
+        </Group>
+        <KcalPreview
+          grams={treatGrams}
+          food={selectedFood}
+          remainingKcal={status.remainingKcal}
         />
-        <Button
-          variant="light"
-          loading={submitting}
-          onClick={() => logFeeding(true)}
-        >
-          Log treat
-        </Button>
-      </Group>
+      </Stack>
 
       {feedingEvents.length === 0 ? (
         <Text c="dimmed">No feedings logged yet today.</Text>
