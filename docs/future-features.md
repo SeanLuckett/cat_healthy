@@ -57,6 +57,16 @@ Move an item to "Done" (or delete it) once it ships.
   Also, when a `treat` food is selected, hide the suggested-grams readout —
   it's currently shown for any selected food, but the suggestion is derived
   from remaining meal budget and doesn't mean anything for a treat.
+- **UI/UX pass on the Today screen.** Features have been added one at a
+  time with no overall design, and it shows: after the grazing rework
+  (`docs/grazing-plan.md`) the screen stacks three near-identical grams
+  input + button rows (feeding, treat, put back), each with its own kcal
+  preview, under a food picker and two suggestion lines. It's mostly used
+  one-handed on a phone while holding a food bowl. Worth a deliberate
+  pass on layout and flow — e.g. one grams input with a feeding / treat /
+  put-back toggle, clearer hierarchy between the remaining-budget card
+  and the suggestions, and larger tap targets. Pairs naturally with the
+  food-category-aware item above.
 
 ## Done
 
