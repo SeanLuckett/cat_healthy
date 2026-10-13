@@ -19,6 +19,7 @@ export interface FeedingEvent {
   food_id: number;
   grams: number;
   is_treat: boolean;
+  is_put_back: boolean; // grams returned to the fridge; subtracts from consumed
 }
 
 export type Goal = "weight_loss" | "maintenance" | "weight_gain";

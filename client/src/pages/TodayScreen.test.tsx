@@ -194,11 +194,40 @@ describe("TodayScreen", () => {
           food_id: 1,
           grams: 30,
           is_treat: false,
+          is_put_back: false,
         }),
       }),
     );
 
     await waitFor(() => expect(screen.getByText(/60 kcal/)).toBeInTheDocument());
+    expect(gramsInput).toHaveValue("");
+  });
+
+  it("logs a put-back and clears the input on success", async () => {
+    const updatedStatus = { ...baseStatus, remainingKcal: 128 };
+    mockApi({}, { ok: true, body: updatedStatus });
+    renderWithProvider(<TodayScreen />);
+    await waitFor(() => expect(screen.getByText(/120 kcal/)).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    const gramsInput = screen.getByLabelText("Put back in fridge (grams)");
+    await user.type(gramsInput, "7");
+    await user.click(screen.getByRole("button", { name: "Put back" }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/feedings",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          food_id: 1,
+          grams: 7,
+          is_treat: false,
+          is_put_back: true,
+        }),
+      }),
+    );
+
+    await waitFor(() => expect(screen.getByText(/128 kcal/)).toBeInTheDocument());
     expect(gramsInput).toHaveValue("");
   });
 
@@ -231,6 +260,7 @@ describe("TodayScreen", () => {
     expect(posts()).toHaveLength(1);
     expect(logButton).toBeDisabled();
     expect(screen.getByRole("button", { name: "Log treat" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Put back" })).toBeDisabled();
 
     releasePost();
     await waitFor(() => expect(logButton).toBeEnabled());
@@ -283,6 +313,18 @@ describe("TodayScreen", () => {
       expect(screen.getByText("5 g = 6 kcal · leaves 114 kcal today")).toBeInTheDocument();
     });
 
+    it("shows put-back grams as kcal given back to today's budget", async () => {
+      mockApi();
+      renderWithProvider(<TodayScreen />);
+      await waitFor(() => expect(screen.getByText(/120 kcal/)).toBeInTheDocument());
+
+      const user = userEvent.setup();
+      await user.type(screen.getByLabelText("Put back in fridge (grams)"), "7");
+
+      // 7 g = 8.4 kcal given back: 120 + 8.4 ≈ 128.
+      expect(screen.getByText("7 g = 8 kcal · back to 128 kcal today")).toBeInTheDocument();
+    });
+
     it("uses the selected food's kcal per gram", async () => {
       mockApi();
       renderWithProvider(<TodayScreen />);
@@ -327,6 +369,7 @@ describe("TodayScreen", () => {
         food_id: 1,
         grams: 40,
         is_treat: false,
+        is_put_back: false,
       },
       {
         id: 2,
@@ -334,6 +377,15 @@ describe("TodayScreen", () => {
         food_id: 2,
         grams: 5,
         is_treat: true,
+        is_put_back: false,
+      },
+      {
+        id: 3,
+        timestamp: "2026-01-01 22:10:00",
+        food_id: 1,
+        grams: 7,
+        is_treat: false,
+        is_put_back: true,
       },
     ];
     mockApi({}, undefined, events);
@@ -344,9 +396,11 @@ describe("TodayScreen", () => {
     const table = within(screen.getByRole("table"));
     expect(table.getByText("08:05")).toBeInTheDocument();
     expect(table.getByText("15:30")).toBeInTheDocument();
-    expect(table.getByText("Chicken Pate")).toBeInTheDocument();
+    expect(table.getAllByText("Chicken Pate")).toHaveLength(2);
     expect(table.getByText("Kibble")).toBeInTheDocument();
     expect(table.getByText("Feeding")).toBeInTheDocument();
     expect(table.getByText("Treat")).toBeInTheDocument();
+    expect(table.getByText("Put back")).toBeInTheDocument();
+    expect(table.getByText("−7")).toBeInTheDocument();
   });
 });

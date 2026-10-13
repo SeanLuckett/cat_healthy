@@ -50,8 +50,17 @@ export const getTodaysFeedingEvents = (): FeedingEvent[] => {
     .prepare(
       "SELECT * FROM feeding_events WHERE date(timestamp) = date('now', 'localtime')",
     )
-    .all() as Array<Omit<FeedingEvent, "is_treat"> & { is_treat: number }>;
-  return rows.map((r) => ({ ...r, is_treat: Boolean(r.is_treat) }));
+    .all() as Array<
+    Omit<FeedingEvent, "is_treat" | "is_put_back"> & {
+      is_treat: number;
+      is_put_back: number;
+    }
+  >;
+  return rows.map((r) => ({
+    ...r,
+    is_treat: Boolean(r.is_treat),
+    is_put_back: Boolean(r.is_put_back),
+  }));
 };
 
 // Local "HH:MM", matching the datetime('now', 'localtime') timestamps

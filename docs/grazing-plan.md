@@ -66,4 +66,4 @@ can be checked by hand in the app before the next one starts.
 
 - [x] Step 1 (merged)
 - [x] Step 2 (merged)
-- [ ] Step 3
+- [x] Step 3 (awaiting manual review)

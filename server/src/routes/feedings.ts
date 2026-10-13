@@ -18,15 +18,16 @@ feedingsRouter.get("/api/feedings", (req, res) => {
         )
         .all();
   res.json(
-    (rows as Array<{ is_treat: number }>).map((r) => ({
+    (rows as Array<{ is_treat: number; is_put_back: number }>).map((r) => ({
       ...r,
       is_treat: Boolean(r.is_treat),
+      is_put_back: Boolean(r.is_put_back),
     })),
   );
 });
 
 feedingsRouter.post("/api/feedings", (req, res) => {
-  const { food_id, grams, is_treat } = req.body ?? {};
+  const { food_id, grams, is_treat, is_put_back } = req.body ?? {};
 
   if (typeof grams !== "number" || grams <= 0) {
     return res.status(400).json({ error: "grams must be a positive number" });
@@ -37,10 +38,16 @@ feedingsRouter.post("/api/feedings", (req, res) => {
     return res.status(400).json({ error: `food_id ${food_id} does not exist` });
   }
 
+  if (is_treat && is_put_back) {
+    return res
+      .status(400)
+      .json({ error: "a feeding can't be both a treat and a put-back" });
+  }
+
   db.prepare(
-    `INSERT INTO feeding_events (timestamp, food_id, grams, is_treat)
-     VALUES (datetime('now', 'localtime'), ?, ?, ?)`,
-  ).run(food_id, grams, is_treat ? 1 : 0);
+    `INSERT INTO feeding_events (timestamp, food_id, grams, is_treat, is_put_back)
+     VALUES (datetime('now', 'localtime'), ?, ?, ?, ?)`,
+  ).run(food_id, grams, is_treat ? 1 : 0, is_put_back ? 1 : 0);
 
   try {
     res.json(computeStatus());

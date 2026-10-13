@@ -106,7 +106,8 @@ CREATE TABLE feeding_events (
   food_id INTEGER NOT NULL REFERENCES foods(id),
   grams REAL NOT NULL,
   meal_slot INTEGER,              -- legacy, no longer written (see FEEDING_TIMES)
-  is_treat INTEGER NOT NULL DEFAULT 0
+  is_treat INTEGER NOT NULL DEFAULT 0,
+  is_put_back INTEGER NOT NULL DEFAULT 0 -- grams returned to the fridge; subtracted from consumed
 );
 
 CREATE TABLE cat_profile (
@@ -358,6 +359,10 @@ on either — delete and re-log is simpler than partial-edit UI for MVP.
   input shows what the entry is worth and what it leaves for today.
 - Separate "log a treat" affordance: same food-picker + grams flow, posts
   with `is_treat: true`.
+- "Put back in fridge" affordance: grams of leftovers returned to the
+  fridge, posts with `is_put_back: true`. Gives those kcal back to today's
+  budget and doesn't count as a feeding. Shown as negative grams in the
+  history table.
 
 **Weight screen**:
 

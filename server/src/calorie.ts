@@ -60,7 +60,10 @@ export const remainingBudget = (
 ): number => {
   const consumed = todaysEvents.reduce((sum, e) => {
     const food = foods.find((f) => f.id === e.food_id)!;
-    return sum + e.grams * food.kcal_per_gram;
+    const kcal = e.grams * food.kcal_per_gram;
+    // Leftovers that go back to the fridge were logged as served but never
+    // eaten, so they come back off today's total.
+    return e.is_put_back ? sum - kcal : sum + kcal;
   }, 0);
   return dailyTargetKcal - consumed;
 };
@@ -99,6 +102,7 @@ export const feedingsLeft = (
   const servedThisWindow = todaysEvents.some(
     (e) =>
       !e.is_treat &&
+      !e.is_put_back &&
       feedingWindow(e.timestamp.slice(11, 16), feedingTimes) === currentWindow,
   );
   return feedingTimes.length - currentWindow - (servedThisWindow ? 1 : 0);

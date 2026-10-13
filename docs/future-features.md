@@ -16,8 +16,6 @@ Move an item to "Done" (or delete it) once it ships.
 - **Kibble-specific portioning** (cup/bag conversions). Data model already
   supports it via `kcal_per_gram`; needs UI only if Mac's diet changes
   from wet-food-only.
-- **Leftover-food tracking.** `grams_fed` is currently treated as
-  `grams_eaten`. Only worth building if he stops reliably finishing meals.
 - **Multi-food single meal.** A `feeding_events` row is one food + one
   grams amount, so there's no way to log a meal split across two foods
   (e.g. a food-transition period, mixing old and new food in one
@@ -59,6 +57,12 @@ Move an item to "Done" (or delete it) once it ships.
   Also, when a `treat` food is selected, hide the suggested-grams readout —
   it's currently shown for any selected food, but the suggestion is derived
   from remaining meal budget and doesn't mean anything for a treat.
+
+## Done
+
+- **Leftover-food tracking.** Shipped 2026-10-13 as a "Put back" entry
+  (`is_put_back`) that gives the kcal of food returned to the fridge back
+  to today's budget. See `docs/grazing-plan.md`.
 
 ## Out of scope indefinitely (revisit only if constraints change)
 

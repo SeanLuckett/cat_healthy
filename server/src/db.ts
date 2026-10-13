@@ -30,7 +30,8 @@ db.exec(`
     food_id INTEGER NOT NULL REFERENCES foods(id),
     grams REAL NOT NULL,
     meal_slot INTEGER, -- legacy, no longer written (see docs/grazing-plan.md)
-    is_treat INTEGER NOT NULL DEFAULT 0
+    is_treat INTEGER NOT NULL DEFAULT 0,
+    is_put_back INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS cat_profile (
@@ -41,3 +42,14 @@ db.exec(`
     manual_override_kcal REAL
   );
 `);
+
+// Columns added after the table was first created — CREATE TABLE IF NOT
+// EXISTS won't add them to an existing database.
+const feedingColumns = (
+  db.prepare("PRAGMA table_info(feeding_events)").all() as Array<{ name: string }>
+).map((c) => c.name);
+if (!feedingColumns.includes("is_put_back")) {
+  db.exec(
+    "ALTER TABLE feeding_events ADD COLUMN is_put_back INTEGER NOT NULL DEFAULT 0",
+  );
+}

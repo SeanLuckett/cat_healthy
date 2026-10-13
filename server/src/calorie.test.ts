@@ -91,8 +91,8 @@ describe("remainingBudget", () => {
 
   it("subtracts consumed kcal from the daily target", () => {
     const events: FeedingEvent[] = [
-      { id: 1, timestamp: "2026-01-01T08:00:00", food_id: 1, grams: 50, is_treat: false },
-      { id: 2, timestamp: "2026-01-01T12:00:00", food_id: 2, grams: 25, is_treat: false },
+      { id: 1, timestamp: "2026-01-01T08:00:00", food_id: 1, grams: 50, is_treat: false, is_put_back: false },
+      { id: 2, timestamp: "2026-01-01T12:00:00", food_id: 2, grams: 25, is_treat: false, is_put_back: false },
     ];
     // consumed = 50*1.0 + 25*0.8 = 70
     expect(remainingBudget(200, events, foods)).toBeCloseTo(130, 5);
@@ -100,6 +100,15 @@ describe("remainingBudget", () => {
 
   it("returns the full target when no events logged yet", () => {
     expect(remainingBudget(200, [], foods)).toBe(200);
+  });
+
+  it("gives back the kcal of food put back in the fridge", () => {
+    const events: FeedingEvent[] = [
+      { id: 1, timestamp: "2026-01-01T18:00:00", food_id: 1, grams: 50, is_treat: false, is_put_back: false },
+      { id: 2, timestamp: "2026-01-01T22:00:00", food_id: 1, grams: 7, is_treat: false, is_put_back: true },
+    ];
+    // consumed = 50 - 7 = 43
+    expect(remainingBudget(200, events, foods)).toBeCloseTo(157, 5);
   });
 });
 
@@ -128,6 +137,7 @@ describe("feedingsLeft", () => {
     food_id: 1,
     grams: 30,
     is_treat: isTreat,
+    is_put_back: false,
   });
 
   it("counts every feeding before the first feeding time", () => {
@@ -152,6 +162,11 @@ describe("feedingsLeft", () => {
   it("counts food served early (before the first time) toward the first feeding", () => {
     expect(feedingsLeft([fedAt("06:30")], "06:45", times)).toBe(2);
     expect(feedingsLeft([fedAt("06:30")], "08:00", times)).toBe(2);
+  });
+
+  it("doesn't count a put-back as serving a feeding", () => {
+    const putBack = { ...fedAt("07:30"), is_put_back: true };
+    expect(feedingsLeft([putBack], "08:00", times)).toBe(3);
   });
 
   it("ignores treats", () => {

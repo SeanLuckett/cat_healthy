@@ -45,13 +45,23 @@ const KcalPreview = ({
   grams,
   food,
   remainingKcal,
+  putBack = false,
 }: {
   grams: number | "";
   food: Food | undefined;
   remainingKcal: number;
+  putBack?: boolean;
 }) => {
   if (!food || grams === "" || grams <= 0) return null;
   const kcal = grams * food.kcal_per_gram;
+  if (putBack) {
+    return (
+      <Text size="sm" c="dimmed">
+        {grams} g = {kcal.toFixed(0)} kcal · back to{" "}
+        {(remainingKcal + kcal).toFixed(0)} kcal today
+      </Text>
+    );
+  }
   const left = remainingKcal - kcal;
   const over = Math.round(left) < 0;
   return (
@@ -64,6 +74,8 @@ const KcalPreview = ({
   );
 };
 
+type EntryKind = "feeding" | "treat" | "put_back";
+
 const TodayScreen = () => {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [foods, setFoods] = useState<Food[]>([]);
@@ -71,6 +83,7 @@ const TodayScreen = () => {
   const [selectedFoodId, setSelectedFoodId] = useState<string | null>(null);
   const [mealGrams, setMealGrams] = useState<number | "">("");
   const [treatGrams, setTreatGrams] = useState<number | "">("");
+  const [putBackGrams, setPutBackGrams] = useState<number | "">("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -106,8 +119,14 @@ const TodayScreen = () => {
 
   const selectedFood = foods.find((f) => String(f.id) === selectedFoodId);
 
-  const logFeeding = async (isTreat: boolean) => {
-    const grams = isTreat ? treatGrams : mealGrams;
+  const gramsByKind = {
+    feeding: [mealGrams, setMealGrams],
+    treat: [treatGrams, setTreatGrams],
+    put_back: [putBackGrams, setPutBackGrams],
+  } as const;
+
+  const logFeeding = async (kind: EntryKind) => {
+    const [grams, setGrams] = gramsByKind[kind];
     if (submitting || !selectedFoodId || grams === "" || grams <= 0) return;
     setError(null);
     setSubmitting(true);
@@ -117,7 +136,8 @@ const TodayScreen = () => {
       body: JSON.stringify({
         food_id: Number(selectedFoodId),
         grams,
-        is_treat: isTreat,
+        is_treat: kind === "treat",
+        is_put_back: kind === "put_back",
       }),
     }).finally(() => setSubmitting(false));
     if (!res.ok) {
@@ -126,11 +146,7 @@ const TodayScreen = () => {
       return;
     }
     setStatus(await res.json());
-    if (isTreat) {
-      setTreatGrams("");
-    } else {
-      setMealGrams("");
-    }
+    setGrams("");
     await refetchFeedings();
   };
 
@@ -200,7 +216,7 @@ const TodayScreen = () => {
             onChange={(v) => setMealGrams(v === "" ? "" : Number(v))}
             min={0}
           />
-          <Button loading={submitting} onClick={() => logFeeding(false)}>
+          <Button loading={submitting} onClick={() => logFeeding("feeding")}>
             Log feeding
           </Button>
         </Group>
@@ -222,7 +238,7 @@ const TodayScreen = () => {
           <Button
             variant="light"
             loading={submitting}
-            onClick={() => logFeeding(true)}
+            onClick={() => logFeeding("treat")}
           >
             Log treat
           </Button>
@@ -231,6 +247,30 @@ const TodayScreen = () => {
           grams={treatGrams}
           food={selectedFood}
           remainingKcal={status.remainingKcal}
+        />
+      </Stack>
+
+      <Stack gap={4}>
+        <Group align="flex-end">
+          <NumberInput
+            label="Put back in fridge (grams)"
+            value={putBackGrams}
+            onChange={(v) => setPutBackGrams(v === "" ? "" : Number(v))}
+            min={0}
+          />
+          <Button
+            variant="default"
+            loading={submitting}
+            onClick={() => logFeeding("put_back")}
+          >
+            Put back
+          </Button>
+        </Group>
+        <KcalPreview
+          grams={putBackGrams}
+          food={selectedFood}
+          remainingKcal={status.remainingKcal}
+          putBack
         />
       </Stack>
 
@@ -253,9 +293,15 @@ const TodayScreen = () => {
                 <Table.Td>
                   {foods.find((f) => f.id === event.food_id)?.name ?? "Unknown food"}
                 </Table.Td>
-                <Table.Td>{event.grams}</Table.Td>
                 <Table.Td>
-                  {event.is_treat ? "Treat" : "Feeding"}
+                  {event.is_put_back ? `−${event.grams}` : event.grams}
+                </Table.Td>
+                <Table.Td>
+                  {event.is_put_back
+                    ? "Put back"
+                    : event.is_treat
+                      ? "Treat"
+                      : "Feeding"}
                 </Table.Td>
               </Table.Tr>
             ))}
