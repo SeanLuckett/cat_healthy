@@ -270,7 +270,9 @@ function progressFlag(
 banner (Today and Weight screens) renders for any non-null value —
 `too_fast`/`reversing` in red, `stalled` in yellow. There is no "on track"
 banner; when no flag is set, the Weight screen shows a dimmed one-line trend
-readout instead (or a warm-up note while `weeklyLossRate` is null). As with the original
+readout instead (or a warm-up note while `weeklyLossRate` is null). Above
+the banner/trend line, the Weight screen always shows the latest EWMA value
+(`smoothedWeightKg`) as "Avg weight" once there's at least one weigh-in. As with the original
 `progressFlag`, the app never auto-adjusts `dailyTarget()` in response;
 any of these three states is a cue for the vet or `manual_override_kcal`,
 not an if-statement. (0.5%/week as the "stalled" cutoff is a starting
@@ -329,11 +331,11 @@ phones without double-feeding him.
 | Method | Path                            | Purpose                                                                        |
 | ------ | ------------------------------- | ------------------------------------------------------------------------------ |
 | GET    | `/api/foods`                    | List all foods                                                                 |
-| GET    | `/api/status`                   | Today's target, remaining budget, feedings left, `weeklyLossRate`, `progressFlag` |
+| GET    | `/api/status`                   | Today's target, remaining budget, feedings left, `weeklyLossRate`, `progressFlag`, `smoothedWeightKg` |
 | POST   | `/api/feedings`                 | Log a feeding event (food or treat); returns updated `/api/status`             |
 | GET    | `/api/feedings?date=YYYY-MM-DD` | List feeding events for a date (defaults to today)                             |
 | GET    | `/api/weight`                   | List weight log entries, most recent first                                     |
-| POST   | `/api/weight`                   | Log a new weight entry; returns updated `weeklyLossRate`                       |
+| POST   | `/api/weight`                   | Log a new weight entry; returns updated `weeklyLossRate`, `progressFlag`, `smoothedWeightKg` |
 | GET    | `/api/profile`                  | Get the (single) cat profile row                                               |
 | DELETE | `/api/feedings/:id`             | Delete a mis-logged feeding event; returns updated `/api/status`               |
 | DELETE | `/api/weight/:id`               | Delete a mis-logged weight entry; returns updated `weeklyLossRate`             |

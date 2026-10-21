@@ -42,5 +42,6 @@ export interface StatusResponse {
   suggestedGramsPerFood: Record<number, number | null>;
   weeklyLossRate: number | null;
   progressFlag: ProgressFlag;
+  smoothedWeightKg: number | null;
   currentWeightKg: number | null;
 }

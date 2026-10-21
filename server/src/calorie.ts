@@ -165,6 +165,13 @@ export const weightEwma = (logs: WeightLog[]): EwmaPoint[] => {
   return points;
 };
 
+// Latest point on the EWMA — the smoothed "average weight" shown alongside
+// the trend. Null until there's at least one weigh-in.
+export const smoothedWeight = (logs: WeightLog[]): number | null => {
+  const points = weightEwma(logs);
+  return points.length > 0 ? points[points.length - 1].ewma : null;
+};
+
 // Fraction of body weight lost per week (negative = gaining), measured on the
 // smoothed EWMA over the last TREND_WINDOW_DAYS rather than between two raw
 // weigh-ins, so a single noisy reading can't flip the progress flag.

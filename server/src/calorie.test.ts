@@ -7,6 +7,7 @@ import {
   feedingsLeft,
   weeklyLossRate,
   weightEwma,
+  smoothedWeight,
   progressFlag,
 } from "./calorie.js";
 import type { CatProfile, Food, FeedingEvent, WeightLog } from "../../shared/types";
@@ -251,6 +252,22 @@ describe("weightEwma", () => {
       ]),
     );
     expect(points.map((p) => p.date)).toEqual(["2026-01-01", "2026-01-03"]);
+  });
+});
+
+describe("smoothedWeight", () => {
+  it("returns null with no weigh-ins", () => {
+    expect(smoothedWeight([])).toBeNull();
+  });
+
+  it("returns the latest EWMA point", () => {
+    const logs = makeLogs([
+      ["2026-01-03", 4.9],
+      ["2026-01-01", 5.0],
+      ["2026-01-02", 5.1],
+    ]);
+    const points = weightEwma(logs);
+    expect(smoothedWeight(logs)).toBe(points[points.length - 1].ewma);
   });
 });
 

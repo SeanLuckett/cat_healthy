@@ -15,6 +15,7 @@ import type { ProgressFlag, WeightLog } from "../../../shared/types";
 interface WeightMutationResult {
   weeklyLossRate: number | null;
   progressFlag: ProgressFlag;
+  smoothedWeightKg: number | null;
 }
 
 const flagBanner = (
@@ -56,6 +57,11 @@ const trendLine = (weeklyLossRate: number | null) => {
   return `Trend: ${direction} ${(Math.abs(weeklyLossRate) * 100).toFixed(1)}%/week`;
 };
 
+// Shown whether or not a banner is up — unlike the rate, it isn't repeated
+// anywhere else.
+const avgWeightLine = (smoothedWeightKg: number) =>
+  `Avg weight: ${smoothedWeightKg.toFixed(2)} kg`;
+
 const todayIso = () =>new Date().toISOString().slice(0, 10);
 
 const WeightScreen = () => {
@@ -63,6 +69,7 @@ const WeightScreen = () => {
   const [progress, setProgress] = useState<WeightMutationResult>({
     weeklyLossRate: null,
     progressFlag: null,
+    smoothedWeightKg: null,
   });
   const [date, setDate] = useState(todayIso());
   const [weightKg, setWeightKg] = useState<number | "">("");
@@ -82,6 +89,7 @@ const WeightScreen = () => {
     setProgress({
       weeklyLossRate: body.weeklyLossRate,
       progressFlag: body.progressFlag,
+      smoothedWeightKg: body.smoothedWeightKg,
     });
   };
 
@@ -113,6 +121,10 @@ const WeightScreen = () => {
   return (
     <Stack maw={480}>
       <Title order={2}>Weight</Title>
+
+      {progress.smoothedWeightKg != null && (
+        <Text fw={500}>{avgWeightLine(progress.smoothedWeightKg)}</Text>
+      )}
 
       {flagBanner(progress.progressFlag, progress.weeklyLossRate) ?? (
         <Text c="dimmed" size="sm">

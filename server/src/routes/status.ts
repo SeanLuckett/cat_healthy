@@ -7,6 +7,7 @@ import {
   feedingsLeft,
   weeklyLossRate,
   progressFlag,
+  smoothedWeight,
 } from "../calorie.js";
 import type {
   CatProfile,
@@ -116,6 +117,7 @@ export const computeStatus = (): StatusResponse => {
     suggestedGramsPerFood,
     weeklyLossRate: lossRate,
     progressFlag: flag,
+    smoothedWeightKg: smoothedWeight(allWeightLogs),
     currentWeightKg,
   };
 };

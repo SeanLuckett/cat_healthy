@@ -14,6 +14,7 @@ interface MockOptions {
   logs?: WeightLog[];
   progressFlag?: ProgressFlag;
   weeklyLossRate?: number | null;
+  smoothedWeightKg?: number | null;
   postWeightResponse?: { ok: boolean; body: unknown };
 }
 
@@ -21,13 +22,17 @@ const mockApi = ({
   logs: logsOverride = logs,
   progressFlag = null,
   weeklyLossRate = null,
+  smoothedWeightKg = null,
   postWeightResponse,
 }: MockOptions = {}) => {
   vi.stubGlobal(
     "fetch",
     vi.fn((url: string, init?: RequestInit) => {
       if (url === "/api/weight" && init?.method === "POST") {
-        const result = postWeightResponse ?? { ok: true, body: { weeklyLossRate, progressFlag } };
+        const result = postWeightResponse ?? {
+          ok: true,
+          body: { weeklyLossRate, progressFlag, smoothedWeightKg },
+        };
         return Promise.resolve({
           ok: result.ok,
           json: async () => result.body,
@@ -39,7 +44,7 @@ const mockApi = ({
       if (url === "/api/status") {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ weeklyLossRate, progressFlag }),
+          json: async () => ({ weeklyLossRate, progressFlag, smoothedWeightKg }),
         } as Response);
       }
       throw new Error(`Unhandled fetch: ${url}`);
@@ -120,6 +125,27 @@ describe("WeightScreen", () => {
 
     await waitFor(() => expect(screen.getByText("Losing too fast")).toBeInTheDocument());
     expect(screen.queryByText(/^Trend:/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [null, "Trend: losing 1.8%/week"],
+    ["too_fast", "Losing too fast"],
+  ] as const)("shows the average weight alongside the trend (flag %s)", async (progressFlag, trend) => {
+    mockApi({ progressFlag, weeklyLossRate: 0.018, smoothedWeightKg: 7.6123 });
+    renderWithProvider(<WeightScreen />);
+
+    await waitFor(() => expect(screen.getByText("Avg weight: 7.61 kg")).toBeInTheDocument());
+    expect(screen.getByText(trend)).toBeInTheDocument();
+  });
+
+  it("hides the average weight when there are no weigh-ins", async () => {
+    mockApi({ logs: [], smoothedWeightKg: null });
+    renderWithProvider(<WeightScreen />);
+
+    await waitFor(() =>
+      expect(screen.getByText("No weigh-ins logged yet.")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/^Avg weight:/)).not.toBeInTheDocument();
   });
 
   it("adds a weigh-in, refreshes the table, and updates the progress banner", async () => {
