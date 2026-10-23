@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AppShell, Tabs } from "@mantine/core";
 import TodayScreen from "./pages/TodayScreen";
 import WeightScreen from "./pages/WeightScreen";
+import FoodsScreen from "./pages/FoodsScreen";
 
 const App = () => {
   const [tab, setTab] = useState<string | null>("today");
@@ -13,12 +14,14 @@ const App = () => {
           <Tabs.List>
             <Tabs.Tab value="today">Today</Tabs.Tab>
             <Tabs.Tab value="weight">Weight</Tabs.Tab>
+            <Tabs.Tab value="foods">Foods</Tabs.Tab>
           </Tabs.List>
         </Tabs>
       </AppShell.Header>
       <AppShell.Main>
         {tab === "today" && <TodayScreen />}
         {tab === "weight" && <WeightScreen />}
+        {tab === "foods" && <FoodsScreen />}
       </AppShell.Main>
     </AppShell>
   );

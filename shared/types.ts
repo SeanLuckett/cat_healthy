@@ -4,6 +4,7 @@ export interface Food {
   kcal_per_gram: number;
   category: "wet" | "dry" | "treat";
   notes: string | null;
+  archived: boolean; // hidden from the food picker; kept so past feedings still resolve
 }
 
 export interface WeightLog {

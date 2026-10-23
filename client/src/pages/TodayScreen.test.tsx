@@ -6,8 +6,8 @@ import TodayScreen from "./TodayScreen";
 import type { Food, FeedingEvent, StatusResponse } from "../../../shared/types";
 
 const foods: Food[] = [
-  { id: 1, name: "Chicken Pate", kcal_per_gram: 1.2, category: "wet", notes: null },
-  { id: 2, name: "Kibble", kcal_per_gram: 3.5, category: "dry", notes: null },
+  { id: 1, name: "Chicken Pate", kcal_per_gram: 1.2, category: "wet", notes: null, archived: false },
+  { id: 2, name: "Kibble", kcal_per_gram: 3.5, category: "dry", notes: null, archived: false },
 ];
 
 const baseStatus: StatusResponse = {
@@ -26,13 +26,14 @@ const mockApi = (
   statusOverride: Partial<StatusResponse> = {},
   postFeedingResponse?: { ok: boolean; body: unknown },
   feedingEvents: FeedingEvent[] = [],
+  foodsOverride: Food[] = foods,
 ) => {
   const status = { ...baseStatus, ...statusOverride };
   vi.stubGlobal(
     "fetch",
     vi.fn((url: string, init?: RequestInit) => {
       if (url === "/api/foods") {
-        return Promise.resolve({ ok: true, json: async () => foods } as Response);
+        return Promise.resolve({ ok: true, json: async () => foodsOverride } as Response);
       }
       if (url === "/api/feedings" && init?.method === "POST") {
         const result = postFeedingResponse ?? { ok: true, body: status };
@@ -77,6 +78,21 @@ describe("TodayScreen", () => {
 
     await waitFor(() => expect(screen.getByText(/45.5 g/)).toBeInTheDocument());
     expect(await screen.findByDisplayValue("Chicken Pate")).toBeInTheDocument();
+  });
+
+  it("leaves archived foods out of the picker and the default selection", async () => {
+    const withArchived: Food[] = [
+      { id: 3, name: "Old Treat", kcal_per_gram: 0.6, category: "treat", notes: null, archived: true },
+      ...foods,
+    ];
+    mockApi({}, undefined, [], withArchived);
+    renderWithProvider(<TodayScreen />);
+
+    expect(await screen.findByDisplayValue("Chicken Pate")).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("textbox", { name: "Food" }));
+    expect(await screen.findByRole("option", { name: "Kibble" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Old Treat" })).not.toBeInTheDocument();
   });
 
   it("updates the suggested grams when a different food is selected", async () => {

@@ -14,7 +14,8 @@ db.exec(`
     name TEXT NOT NULL,
     kcal_per_gram REAL NOT NULL,
     category TEXT NOT NULL DEFAULT 'wet',
-    notes TEXT
+    notes TEXT,
+    archived INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS weight_log (
@@ -52,4 +53,11 @@ if (!feedingColumns.includes("is_put_back")) {
   db.exec(
     "ALTER TABLE feeding_events ADD COLUMN is_put_back INTEGER NOT NULL DEFAULT 0",
   );
+}
+
+const foodColumns = (
+  db.prepare("PRAGMA table_info(foods)").all() as Array<{ name: string }>
+).map((c) => c.name);
+if (!foodColumns.includes("archived")) {
+  db.exec("ALTER TABLE foods ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
 }

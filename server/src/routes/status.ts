@@ -18,7 +18,10 @@ import type {
 } from "../../../shared/types";
 
 export const getAllFoods = (): Food[] => {
-  return db.prepare("SELECT * FROM foods").all() as Food[];
+  const rows = db.prepare("SELECT * FROM foods").all() as Array<
+    Omit<Food, "archived"> & { archived: number }
+  >;
+  return rows.map((r) => ({ ...r, archived: Boolean(r.archived) }));
 };
 
 export const getProfile = (): CatProfile => {

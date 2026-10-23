@@ -73,6 +73,11 @@ Move an item to "Done" (or delete it) once it ships.
 - **Leftover-food tracking.** Shipped 2026-10-13 as a "Put back" entry
   (`is_put_back`) that gives the kcal of food returned to the fridge back
   to today's budget. See `docs/grazing-plan.md`.
+- **Archive/unarchive foods.** Shipped 2026-10-23 as a Foods tab with an
+  Archive/Unarchive button per food (`foods.archived`). Archived foods are
+  hidden from the Today screen's picker but stay in the database, so past
+  feedings keep their names and calories. Came up swapping out treats Mac
+  no longer has.
 
 ## Out of scope indefinitely (revisit only if constraints change)
 

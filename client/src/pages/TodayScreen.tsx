@@ -106,9 +106,12 @@ const TodayScreen = () => {
     refetch();
   }, []);
 
+  // Archived foods stay in `foods` so today's list can still name them.
+  const pickableFoods = foods.filter((f) => !f.archived);
+
   useEffect(() => {
-    if (!selectedFoodId && foods.length > 0) {
-      setSelectedFoodId(String(foods[0].id));
+    if (!selectedFoodId && pickableFoods.length > 0) {
+      setSelectedFoodId(String(pickableFoods[0].id));
     }
   }, [foods, selectedFoodId]);
 
@@ -185,7 +188,7 @@ const TodayScreen = () => {
 
       <Select
         label="Food"
-        data={foods.map((f) => ({ value: String(f.id), label: f.name }))}
+        data={pickableFoods.map((f) => ({ value: String(f.id), label: f.name }))}
         value={selectedFoodId}
         onChange={setSelectedFoodId}
       />

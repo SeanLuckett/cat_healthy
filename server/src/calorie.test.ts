@@ -86,8 +86,8 @@ describe("dailyTarget", () => {
 
 describe("remainingBudget", () => {
   const foods: Food[] = [
-    { id: 1, name: "Wet A", kcal_per_gram: 1.0, category: "wet", notes: null },
-    { id: 2, name: "Wet B", kcal_per_gram: 0.8, category: "wet", notes: null },
+    { id: 1, name: "Wet A", kcal_per_gram: 1.0, category: "wet", notes: null, archived: false },
+    { id: 2, name: "Wet B", kcal_per_gram: 0.8, category: "wet", notes: null, archived: false },
   ];
 
   it("subtracts consumed kcal from the daily target", () => {
@@ -114,7 +114,7 @@ describe("remainingBudget", () => {
 });
 
 describe("gramsForServing", () => {
-  const food: Food = { id: 1, name: "Wet A", kcal_per_gram: 1.0, category: "wet", notes: null };
+  const food: Food = { id: 1, name: "Wet A", kcal_per_gram: 1.0, category: "wet", notes: null, archived: false };
 
   it("splits remaining kcal evenly across feedings left", () => {
     expect(gramsForServing(100, 2, food)).toBeCloseTo(50, 5);
