@@ -67,6 +67,23 @@ describe("WeightScreen", () => {
     expect(screen.getByText("2026-09-08")).toBeInTheDocument();
   });
 
+  it("lists only the 7 most recent weigh-ins", async () => {
+    // /api/weight returns newest first
+    const manyLogs: WeightLog[] = Array.from({ length: 9 }, (_, i) => ({
+      id: i + 1,
+      date: `2026-09-${String(9 - i).padStart(2, "0")}`,
+      weight_kg: 5.0,
+      notes: null,
+    }));
+    mockApi({ logs: manyLogs });
+    renderWithProvider(<WeightScreen />);
+
+    await waitFor(() => expect(screen.getByText("2026-09-09")).toBeInTheDocument());
+    expect(screen.getByText("2026-09-03")).toBeInTheDocument();
+    expect(screen.queryByText("2026-09-02")).not.toBeInTheDocument();
+    expect(screen.queryByText("2026-09-01")).not.toBeInTheDocument();
+  });
+
   it("shows an empty state when there are no weigh-ins", async () => {
     mockApi({ logs: [] });
     renderWithProvider(<WeightScreen />);

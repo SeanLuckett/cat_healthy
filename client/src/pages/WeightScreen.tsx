@@ -62,6 +62,10 @@ const trendLine = (weeklyLossRate: number | null) => {
 const avgWeightLine = (smoothedWeightKg: number) =>
   `Avg weight: ${smoothedWeightKg.toFixed(2)} kg`;
 
+// The table only lists the most recent weigh-ins; the trend and average above
+// it still use the full history.
+const VISIBLE_WEIGHINS = 7;
+
 const todayIso = () =>new Date().toISOString().slice(0, 10);
 
 const WeightScreen = () => {
@@ -174,7 +178,7 @@ const WeightScreen = () => {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {logs.map((log) => (
+            {logs.slice(0, VISIBLE_WEIGHINS).map((log) => (
               <Table.Tr key={log.id}>
                 <Table.Td>{log.date}</Table.Td>
                 <Table.Td>{log.weight_kg}</Table.Td>
