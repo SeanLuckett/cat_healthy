@@ -1,16 +1,17 @@
 import { Router } from "express";
 import { db } from "../db.js";
-import { weeklyLossRate, progressFlag, smoothedWeight } from "../calorie.js";
+import { weightTrend, progressFlag, smoothedWeight } from "../calorie.js";
 import { getAllWeightLogs, getProfile } from "./status.js";
 
 export const weightRouter = Router();
 
 const progressSummary = () => {
   const logs = getAllWeightLogs();
-  const rate = weeklyLossRate(logs);
+  const trend = weightTrend(logs);
   return {
-    weeklyLossRate: rate,
-    progressFlag: progressFlag(rate, getProfile().goal),
+    weeklyLossRate: trend?.rate ?? null,
+    weeklyLossRateMargin: trend?.margin ?? null,
+    progressFlag: progressFlag(trend, getProfile().goal),
     smoothedWeightKg: smoothedWeight(logs),
   };
 };

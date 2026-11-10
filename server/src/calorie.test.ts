@@ -5,7 +5,7 @@ import {
   remainingBudget,
   gramsForServing,
   feedingsLeft,
-  weeklyLossRate,
+  weightTrend,
   weightEwma,
   smoothedWeight,
   progressFlag,
@@ -271,19 +271,51 @@ describe("smoothedWeight", () => {
   });
 });
 
-describe("weeklyLossRate", () => {
+// Mac's real weigh-ins, Oct 9 – Nov 10 2026. The old 7-day EWMA rule called
+// this "stalled" (0.27%/week); the last two weeks are flatter still but too
+// noisy to rule out a healthy rate.
+const MAC_OCT_NOV_2026 = makeLogs([
+  ["2026-10-09", 8.35],
+  ["2026-10-11", 8.18],
+  ["2026-10-14", 8.395],
+  ["2026-10-18", 8.205],
+  ["2026-10-21", 8.105],
+  ["2026-10-25", 8.145],
+  ["2026-10-28", 8.055],
+  ["2026-11-02", 7.97],
+  ["2026-11-04", 7.965],
+  ["2026-11-06", 8.015],
+  ["2026-11-07", 7.99],
+  ["2026-11-08", 8.007],
+  ["2026-11-09", 7.965],
+  ["2026-11-10", 8.02],
+]);
+
+// Like dailyLogs, but each reading is pushed ±`noise` kg, alternating.
+const noisyDailyLogs = (
+  days: number,
+  start: number,
+  perDay: number,
+  noise: number,
+): WeightLog[] =>
+  dailyLogs(days, start, perDay).map((log, i) => ({
+    ...log,
+    weight_kg: log.weight_kg + (i % 2 === 0 ? noise : -noise),
+  }));
+
+describe("weightTrend", () => {
   it("returns null with fewer than 4 weigh-in days", () => {
     const logs = makeLogs([
       ["2026-01-01", 5.0],
       ["2026-01-08", 4.95],
       ["2026-01-15", 4.9],
     ]);
-    expect(weeklyLossRate(logs)).toBeNull();
+    expect(weightTrend(logs)).toBeNull();
   });
 
   it("returns null when weigh-ins span fewer than 10 days", () => {
-    expect(weeklyLossRate(dailyLogs(10, 5.0, 0.01))).toBeNull(); // Jan 1–10 = 9 days
-    expect(weeklyLossRate(dailyLogs(11, 5.0, 0.01))).not.toBeNull();
+    expect(weightTrend(dailyLogs(10, 5.0, 0.01))).toBeNull(); // Jan 1–10 = 9 days
+    expect(weightTrend(dailyLogs(11, 5.0, 0.01))).not.toBeNull();
   });
 
   it("returns null for two weigh-ins two days apart (the Oct 9/11 case)", () => {
@@ -291,72 +323,99 @@ describe("weeklyLossRate", () => {
       ["2026-10-09", 8.35],
       ["2026-10-11", 8.18],
     ]);
-    expect(weeklyLossRate(logs)).toBeNull();
+    expect(weightTrend(logs)).toBeNull();
   });
 
-  it("tracks a steady loss rate once the EWMA has warmed up", () => {
-    // 0.005 kg/day off ~5 kg ≈ 0.7%/week
-    const rate = weeklyLossRate(dailyLogs(30, 5.0, 0.005));
-    expect(rate).toBeGreaterThan(0.006);
-    expect(rate).toBeLessThan(0.008);
+  it("recovers a steady loss rate exactly, with no margin", () => {
+    // 0.005 kg/day = 0.035 kg/week, as a fraction of the window's mean weight
+    const logs = dailyLogs(30, 5.0, 0.005);
+    const window = logs.slice(-15); // last 14 days inclusive of both ends
+    const mean = window.reduce((s, l) => s + l.weight_kg, 0) / window.length;
+    const trend = weightTrend(logs)!;
+    expect(trend.rate).toBeCloseTo(0.035 / mean, 10);
+    expect(trend.margin).toBeCloseTo(0, 10);
   });
 
-  it("measures the EWMA change over the last 7 days", () => {
-    const logs = dailyLogs(14, 5.0, 0.01);
-    const points = weightEwma(logs);
-    expect(points).toHaveLength(14);
-    const latest = points[points.length - 1]; // Jan 14
-    const base = points.find((p) => p.date === "2026-01-07")!;
-    expect(weeklyLossRate(logs)).toBeCloseTo((base.ewma - latest.ewma) / base.ewma, 10);
-  });
-
-  it("uses the last weigh-in on or before the window start when none falls on it", () => {
+  it("only uses the last 14 days", () => {
+    // Fast loss for 20 days, then flat for 22: the old loss is out of window.
     const logs = makeLogs([
-      ["2026-01-01", 5.0],
-      ["2026-01-04", 4.98],
-      ["2026-01-09", 4.95],
-      ["2026-01-13", 4.92],
+      ...Array.from({ length: 20 }, (_, i): [string, number] => [
+        `2026-01-${String(i + 1).padStart(2, "0")}`,
+        5.0 - 0.02 * i,
+      ]),
+      ...Array.from({ length: 22 }, (_, i): [string, number] => [
+        `2026-02-${String(i + 1).padStart(2, "0")}`,
+        4.5,
+      ]),
     ]);
-    const points = weightEwma(logs);
-    expect(points).toHaveLength(4);
-    const base = points.find((p) => p.date === "2026-01-04")!; // window start is Jan 6
-    expect(weeklyLossRate(logs)).toBeCloseTo((base.ewma - points[3].ewma) / base.ewma, 10);
+    expect(weightTrend(logs)!.rate).toBeCloseTo(0, 10);
   });
 
-  it("doesn't let one high reading flip a downward trend to gaining", () => {
-    const logs = dailyLogs(20, 5.0, 0.007);
-    logs.push({ id: 99, date: "2026-01-21", weight_kg: 5.0, notes: null }); // +0.14 kg spike
-    expect(weeklyLossRate(logs)).toBeGreaterThan(0);
+  it("averages multiple readings on the same date", () => {
+    const logs = dailyLogs(14, 5.0, 0.01);
+    const latest = logs[logs.length - 1];
+    logs.push({ ...latest, id: 99, weight_kg: latest.weight_kg + 0.1 });
+    logs.push({ ...latest, id: 100, weight_kg: latest.weight_kg - 0.1 });
+    expect(weightTrend(logs)!.rate).toBeCloseTo(
+      weightTrend(dailyLogs(14, 5.0, 0.01))!.rate,
+      10,
+    );
   });
 
-  it("returns a negative rate when weight increases (reversing)", () => {
-    expect(weeklyLossRate(dailyLogs(14, 5.0, -0.01))).toBeLessThan(0);
+  it("widens the margin as readings get noisier", () => {
+    const quiet = weightTrend(noisyDailyLogs(21, 5.0, 0.005, 0.01))!;
+    const loud = weightTrend(noisyDailyLogs(21, 5.0, 0.005, 0.05))!;
+    expect(loud.margin).toBeGreaterThan(quiet.margin);
+  });
+
+  it("returns a negative rate when weight increases", () => {
+    expect(weightTrend(dailyLogs(14, 5.0, -0.01))!.rate).toBeLessThan(0);
+  });
+
+  it("finds Mac's last two weeks slow but with a range reaching past 0.5%", () => {
+    const trend = weightTrend(MAC_OCT_NOV_2026)!;
+    expect(trend.rate).toBeGreaterThan(0);
+    expect(trend.rate).toBeLessThan(0.005);
+    expect(trend.rate + trend.margin).toBeGreaterThan(0.005);
   });
 });
 
 describe("progressFlag", () => {
-  it("returns null when rate is null", () => {
+  const trend = (rate: number, margin = 0) => ({ rate, margin });
+
+  it("returns null when there's no trend", () => {
     expect(progressFlag(null, "weight_loss")).toBeNull();
   });
 
   it("returns null for non-weight_loss goals regardless of rate", () => {
-    expect(progressFlag(0.05, "maintenance")).toBeNull();
-    expect(progressFlag(-0.05, "weight_gain")).toBeNull();
+    expect(progressFlag(trend(0.05), "maintenance")).toBeNull();
+    expect(progressFlag(trend(-0.05), "weight_gain")).toBeNull();
   });
 
-  it("flags too_fast above 2%/week", () => {
-    expect(progressFlag(0.025, "weight_loss")).toBe("too_fast");
+  it("flags too_fast when the whole range is above 2%/week", () => {
+    expect(progressFlag(trend(0.025, 0.004), "weight_loss")).toBe("too_fast");
+    expect(progressFlag(trend(0.025, 0.006), "weight_loss")).toBeNull();
   });
 
-  it("flags reversing for negative rate", () => {
-    expect(progressFlag(-0.01, "weight_loss")).toBe("reversing");
+  it("flags reversing when the whole range is gaining", () => {
+    expect(progressFlag(trend(-0.01, 0.009), "weight_loss")).toBe("reversing");
   });
 
-  it("flags stalled below 0.5%/week", () => {
-    expect(progressFlag(0.002, "weight_loss")).toBe("stalled");
+  it("flags stalled when the whole range is below 0.5%/week", () => {
+    expect(progressFlag(trend(0.002, 0.002), "weight_loss")).toBe("stalled");
+    expect(progressFlag(trend(-0.001, 0.003), "weight_loss")).toBe("stalled");
+  });
+
+  it("holds off when the range straddles a threshold", () => {
+    expect(progressFlag(trend(0.002, 0.004), "weight_loss")).toBeNull();
+    expect(progressFlag(trend(0.004, 0.004), "weight_loss")).toBeNull();
   });
 
   it("returns null for a healthy rate between 0.5% and 2%", () => {
-    expect(progressFlag(0.01, "weight_loss")).toBeNull();
+    expect(progressFlag(trend(0.01, 0.003), "weight_loss")).toBeNull();
+  });
+
+  it("doesn't flag Mac's Oct–Nov data as stalled", () => {
+    expect(progressFlag(weightTrend(MAC_OCT_NOV_2026), "weight_loss")).toBeNull();
   });
 });

@@ -17,6 +17,7 @@ const baseStatus: StatusResponse = {
   feedingsLeftToday: 2,
   suggestedGramsPerFood: { 1: 45.5, 2: 15 },
   weeklyLossRate: null,
+  weeklyLossRateMargin: null,
   progressFlag: null,
   smoothedWeightKg: 5.1,
   currentWeightKg: 5.1,

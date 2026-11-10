@@ -112,13 +112,27 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const EWMA_SPAN_DAYS = 10;
 const EWMA_ALPHA = 2 / (EWMA_SPAN_DAYS + 1); // same convention as pandas ewm(span=...)
-const TREND_WINDOW_DAYS = 7;
-// Warm-up: an EWMA is seeded from its first reading, so with only a handful
-// of weigh-ins it mostly echoes the raw values back. Hold off on a rate (and
-// therefore any banner) until there's enough history for smoothing to mean
-// something.
+
+// The trend is a least-squares line through the raw weigh-ins of the last
+// TREND_WINDOW_DAYS. A cat's day-to-day readings scatter ~30 g around the
+// trend, which is about the size of a whole week's healthy loss, so a single
+// week can't tell "stalled" from "on track". Simulated with daily weigh-ins,
+// 14 days flags a full stall in ~9 days; 21 days was ~3 days slower, and 10
+// days barely faster but with noticeably more false "stalled" alarms.
+const TREND_WINDOW_DAYS = 14;
+// Warm-up: hold off on a rate (and therefore any banner) until the window
+// holds enough weigh-ins, spread over enough days, to fit a line to.
 const MIN_TREND_WEIGHIN_DAYS = 4;
 const MIN_TREND_SPAN_DAYS = 10;
+
+// Student's t critical values for a 90% two-sided interval — i.e. 95%
+// confidence on each side — by degrees of freedom (index = df). Beyond the
+// table the normal approximation is close enough.
+const T90 = [
+  NaN, 6.314, 2.92, 2.353, 2.132, 2.015, 1.943, 1.895, 1.86, 1.833, 1.812,
+  1.796, 1.782, 1.771, 1.761, 1.753, 1.746, 1.74, 1.734, 1.729, 1.725,
+];
+const tCritical90 = (df: number): number => T90[df] ?? 1.645;
 
 const daysBetweenDates = (a: string, b: string): number => {
   return Math.round((Date.parse(b) - Date.parse(a)) / MS_PER_DAY);
@@ -135,6 +149,22 @@ export interface EwmaPoint {
   ewma: number;
 }
 
+const dailyMeans = (logs: WeightLog[]): { date: string; weight: number }[] => {
+  const readingsByDate = new Map<string, number[]>();
+  for (const log of logs) {
+    const readings = readingsByDate.get(log.date) ?? [];
+    readings.push(log.weight_kg);
+    readingsByDate.set(log.date, readings);
+  }
+  return [...readingsByDate.keys()].sort().map((date) => {
+    const readings = readingsByDate.get(date)!;
+    return {
+      date,
+      weight: readings.reduce((sum, w) => sum + w, 0) / readings.length,
+    };
+  });
+};
+
 // Time-aware exponentially weighted moving average of weight. Weigh-ins are
 // irregular, so the smoothing factor is compounded over the days elapsed
 // since the previous weigh-in instead of applied once per row — with daily
@@ -142,17 +172,8 @@ export interface EwmaPoint {
 // after a long gap pulls the average proportionally harder. Multiple
 // readings on the same date are averaged into one.
 export const weightEwma = (logs: WeightLog[]): EwmaPoint[] => {
-  const readingsByDate = new Map<string, number[]>();
-  for (const log of logs) {
-    const readings = readingsByDate.get(log.date) ?? [];
-    readings.push(log.weight_kg);
-    readingsByDate.set(log.date, readings);
-  }
-
   const points: EwmaPoint[] = [];
-  for (const date of [...readingsByDate.keys()].sort()) {
-    const readings = readingsByDate.get(date)!;
-    const weight = readings.reduce((sum, w) => sum + w, 0) / readings.length;
+  for (const { date, weight } of dailyMeans(logs)) {
     const prev = points[points.length - 1];
     if (!prev) {
       points.push({ date, ewma: weight });
@@ -172,34 +193,67 @@ export const smoothedWeight = (logs: WeightLog[]): number | null => {
   return points.length > 0 ? points[points.length - 1].ewma : null;
 };
 
-// Fraction of body weight lost per week (negative = gaining), measured on the
-// smoothed EWMA over the last TREND_WINDOW_DAYS rather than between two raw
-// weigh-ins, so a single noisy reading can't flip the progress flag.
-export const weeklyLossRate = (logs: WeightLog[]): number | null => {
-  const points = weightEwma(logs);
-  if (points.length < MIN_TREND_WEIGHIN_DAYS) return null;
+export interface WeightTrend {
+  // Fraction of body weight lost per week (negative = gaining).
+  rate: number;
+  // Half-width of the 90% confidence interval on `rate`, same units. Each
+  // flag only asks about one side ("is it below 0.5%?"), so each end of the
+  // range is a 95% one-sided bound.
+  margin: number;
+}
 
-  const latest = points[points.length - 1];
-  if (daysBetweenDates(points[0].date, latest.date) < MIN_TREND_SPAN_DAYS) {
+// Weekly loss rate with a 90% confidence interval, from a linear regression
+// over the last TREND_WINDOW_DAYS of weigh-ins (same-day readings averaged).
+// The margin lets the progress flag tell "barely moving" apart from "too
+// noisy to say yet".
+export const weightTrend = (logs: WeightLog[]): WeightTrend | null => {
+  const days = dailyMeans(logs);
+  if (days.length === 0) return null;
+
+  const latest = days[days.length - 1].date;
+  const windowStart = shiftDate(latest, -TREND_WINDOW_DAYS);
+  const inWindow = days.filter((d) => d.date >= windowStart);
+  if (inWindow.length < MIN_TREND_WEIGHIN_DAYS) return null;
+  if (daysBetweenDates(inWindow[0].date, latest) < MIN_TREND_SPAN_DAYS) {
     return null;
   }
 
-  // The EWMA holds its value between weigh-ins, so its value a week ago is
-  // the point from the last weigh-in on or before that date.
-  const windowStart = shiftDate(latest.date, -TREND_WINDOW_DAYS);
-  const base = points.filter((p) => p.date <= windowStart).pop()!;
-  return (base.ewma - latest.ewma) / base.ewma;
+  const xs = inWindow.map((d) => daysBetweenDates(windowStart, d.date));
+  const ys = inWindow.map((d) => d.weight);
+  const n = xs.length;
+  const meanX = xs.reduce((a, b) => a + b, 0) / n;
+  const meanY = ys.reduce((a, b) => a + b, 0) / n;
+  const sxx = xs.reduce((sum, x) => sum + (x - meanX) ** 2, 0);
+  const slope =
+    xs.reduce((sum, x, i) => sum + (x - meanX) * (ys[i] - meanY), 0) / sxx;
+  const intercept = meanY - slope * meanX;
+  const sse = xs.reduce(
+    (sum, x, i) => sum + (ys[i] - (intercept + slope * x)) ** 2,
+    0,
+  );
+  const slopeSe = Math.sqrt(sse / (n - 2) / sxx);
+
+  // Express per-week change as a fraction of the window's average weight.
+  return {
+    rate: (-slope * 7) / meanY,
+    margin: (tCritical90(n - 2) * slopeSe * 7) / meanY,
+  };
 };
 
 export type ProgressFlag = "too_fast" | "stalled" | "reversing" | null;
 
+// Only raise a flag when the whole interval is past the threshold — i.e.
+// 95% confident on that side — if
+// the data can't rule out a healthy rate, it's too early to warn.
 export const progressFlag = (
-  rate: number | null,
+  trend: WeightTrend | null,
   goal: CatProfile["goal"],
 ): ProgressFlag => {
-  if (rate == null || goal !== "weight_loss") return null;
-  if (rate > 0.02) return "too_fast"; // losing >2%/week
-  if (rate < 0) return "reversing"; // gaining
-  if (rate < 0.005) return "stalled"; // <0.5%/week — barely moving
+  if (trend == null || goal !== "weight_loss") return null;
+  const low = trend.rate - trend.margin;
+  const high = trend.rate + trend.margin;
+  if (low > 0.02) return "too_fast"; // losing >2%/week
+  if (high < 0) return "reversing"; // gaining
+  if (high < 0.005) return "stalled"; // <0.5%/week — barely moving
   return null;
 };

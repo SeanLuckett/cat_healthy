@@ -5,7 +5,7 @@ import {
   remainingBudget,
   gramsForServing,
   feedingsLeft,
-  weeklyLossRate,
+  weightTrend,
   progressFlag,
   smoothedWeight,
 } from "../calorie.js";
@@ -109,8 +109,7 @@ export const computeStatus = (): StatusResponse => {
   }
 
   const allWeightLogs = getAllWeightLogs();
-  const lossRate = weeklyLossRate(allWeightLogs);
-  const flag = progressFlag(lossRate, profile.goal);
+  const trend = weightTrend(allWeightLogs);
 
   return {
     dailyTargetKcal,
@@ -118,8 +117,9 @@ export const computeStatus = (): StatusResponse => {
     remainingKcal,
     feedingsLeftToday,
     suggestedGramsPerFood,
-    weeklyLossRate: lossRate,
-    progressFlag: flag,
+    weeklyLossRate: trend?.rate ?? null,
+    weeklyLossRateMargin: trend?.margin ?? null,
+    progressFlag: progressFlag(trend, profile.goal),
     smoothedWeightKg: smoothedWeight(allWeightLogs),
     currentWeightKg,
   };

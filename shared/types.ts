@@ -42,6 +42,9 @@ export interface StatusResponse {
   feedingsLeftToday: number;
   suggestedGramsPerFood: Record<number, number | null>;
   weeklyLossRate: number | null;
+  // Half-width of the 90% confidence interval on weeklyLossRate (each end is
+  // a 95% one-sided bound).
+  weeklyLossRateMargin: number | null;
   progressFlag: ProgressFlag;
   smoothedWeightKg: number | null;
   currentWeightKg: number | null;

@@ -14,6 +14,7 @@ import type { ProgressFlag, WeightLog } from "../../../shared/types";
 
 interface WeightMutationResult {
   weeklyLossRate: number | null;
+  weeklyLossRateMargin: number | null;
   progressFlag: ProgressFlag;
   smoothedWeightKg: number | null;
 }
@@ -49,12 +50,21 @@ const flagBanner = (
 
 // Neutral readout for when no banner is up — the banner already shows the
 // rate when there is one.
-const trendLine = (weeklyLossRate: number | null) => {
+// The ± is the 90% range (95% confident on each side): with few or noisy weigh-ins it's wide, which is
+// why no banner is up even if the rate itself looks off.
+const trendLine = (
+  weeklyLossRate: number | null,
+  weeklyLossRateMargin: number | null,
+) => {
   if (weeklyLossRate == null) {
     return "Trend: not enough weigh-ins yet (needs 4 days of weigh-ins spanning 10+ days)";
   }
   const direction = weeklyLossRate >= 0 ? "losing" : "gaining";
-  return `Trend: ${direction} ${(Math.abs(weeklyLossRate) * 100).toFixed(1)}%/week`;
+  const margin =
+    weeklyLossRateMargin != null
+      ? ` (±${(weeklyLossRateMargin * 100).toFixed(1)})`
+      : "";
+  return `Trend: ${direction} ${(Math.abs(weeklyLossRate) * 100).toFixed(1)}%/week${margin}`;
 };
 
 // Shown whether or not a banner is up — unlike the rate, it isn't repeated
@@ -72,6 +82,7 @@ const WeightScreen = () => {
   const [logs, setLogs] = useState<WeightLog[]>([]);
   const [progress, setProgress] = useState<WeightMutationResult>({
     weeklyLossRate: null,
+    weeklyLossRateMargin: null,
     progressFlag: null,
     smoothedWeightKg: null,
   });
@@ -92,6 +103,7 @@ const WeightScreen = () => {
     const body = await res.json();
     setProgress({
       weeklyLossRate: body.weeklyLossRate,
+      weeklyLossRateMargin: body.weeklyLossRateMargin,
       progressFlag: body.progressFlag,
       smoothedWeightKg: body.smoothedWeightKg,
     });
@@ -132,7 +144,7 @@ const WeightScreen = () => {
 
       {flagBanner(progress.progressFlag, progress.weeklyLossRate) ?? (
         <Text c="dimmed" size="sm">
-          {trendLine(progress.weeklyLossRate)}
+          {trendLine(progress.weeklyLossRate, progress.weeklyLossRateMargin)}
         </Text>
       )}
 

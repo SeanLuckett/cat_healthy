@@ -14,6 +14,7 @@ interface MockOptions {
   logs?: WeightLog[];
   progressFlag?: ProgressFlag;
   weeklyLossRate?: number | null;
+  weeklyLossRateMargin?: number | null;
   smoothedWeightKg?: number | null;
   postWeightResponse?: { ok: boolean; body: unknown };
 }
@@ -22,6 +23,7 @@ const mockApi = ({
   logs: logsOverride = logs,
   progressFlag = null,
   weeklyLossRate = null,
+  weeklyLossRateMargin = null,
   smoothedWeightKg = null,
   postWeightResponse,
 }: MockOptions = {}) => {
@@ -31,7 +33,7 @@ const mockApi = ({
       if (url === "/api/weight" && init?.method === "POST") {
         const result = postWeightResponse ?? {
           ok: true,
-          body: { weeklyLossRate, progressFlag, smoothedWeightKg },
+          body: { weeklyLossRate, weeklyLossRateMargin, progressFlag, smoothedWeightKg },
         };
         return Promise.resolve({
           ok: result.ok,
@@ -44,7 +46,7 @@ const mockApi = ({
       if (url === "/api/status") {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ weeklyLossRate, progressFlag, smoothedWeightKg }),
+          json: async () => ({ weeklyLossRate, weeklyLossRateMargin, progressFlag, smoothedWeightKg }),
         } as Response);
       }
       throw new Error(`Unhandled fetch: ${url}`);
@@ -125,6 +127,15 @@ describe("WeightScreen", () => {
 
     await waitFor(() => expect(screen.getByText(text)).toBeInTheDocument());
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows the margin alongside the rate", async () => {
+    mockApi({ weeklyLossRate: 0.006, weeklyLossRateMargin: 0.004 });
+    renderWithProvider(<WeightScreen />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Trend: losing 0.6%/week (±0.4)")).toBeInTheDocument(),
+    );
   });
 
   it("shows a warm-up message when there isn't enough data for a trend", async () => {
