@@ -12,5 +12,10 @@
     "start": "npm run start --workspace server",
     "test": "npm run test --workspace server",
     "seed": "npm run seed --workspace server"
+  },
+  "allowScripts": {
+    "better-sqlite3@13.0.3": true,
+    "esbuild@0.28.2": true,
+    "esbuild@0.21.5": true
   }
 }
