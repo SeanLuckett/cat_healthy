@@ -1,0 +1,6 @@
+[Unit]
+Description=Back up cat_healthy database to Dropbox
+
+[Service]
+Type=oneshot
+ExecStart=%h/mycode/cat_healthy/scripts/backup-db.sh

@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily cat_healthy database backup
+
+[Timer]
+OnCalendar=*-*-* 06:30:00
+# Run at next boot/wake if the computer was off or asleep at 06:30.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
