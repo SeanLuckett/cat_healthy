@@ -3,7 +3,10 @@ import { fileURLToPath } from "url";
 import path from "path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.join(__dirname, "..", "..", "cat.db");
+// CAT_DB_PATH points a second instance (e.g. a branch preview) at a copy, so
+// it never writes to the real database.
+const DB_PATH =
+  process.env.CAT_DB_PATH ?? path.join(__dirname, "..", "..", "cat.db");
 
 export const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");
