@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { renderWithProvider } from "../test-utils";
 import WeightScreen from "./WeightScreen";
 import type { ProgressFlag, WeightLog } from "../../../shared/types";
 
+// /api/weight returns newest first.
 const logs: WeightLog[] = [
-  { id: 1, date: "2026-09-01", weight_kg: 5.2, notes: "starting point" },
-  { id: 2, date: "2026-09-08", weight_kg: 5.1, notes: null },
+  { id: 2, date: "2026-10-08", weight_kg: 5.1, notes: null },
+  { id: 1, date: "2026-10-01", weight_kg: 5.2, notes: "starting point" },
 ];
 
 interface MockOptions {
@@ -16,6 +16,7 @@ interface MockOptions {
   weeklyLossRate?: number | null;
   weeklyLossRateMargin?: number | null;
   smoothedWeightKg?: number | null;
+  targetWeightKg?: number | null;
   postWeightResponse?: { ok: boolean; body: unknown };
 }
 
@@ -25,204 +26,190 @@ const mockApi = ({
   weeklyLossRate = null,
   weeklyLossRateMargin = null,
   smoothedWeightKg = null,
+  targetWeightKg = null,
   postWeightResponse,
 }: MockOptions = {}) => {
+  const reply = (ok: boolean, body: unknown) =>
+    Promise.resolve({ ok, json: async () => body } as Response);
+  const progress = { weeklyLossRate, weeklyLossRateMargin, progressFlag, smoothedWeightKg };
   vi.stubGlobal(
     "fetch",
     vi.fn((url: string, init?: RequestInit) => {
       if (url === "/api/weight" && init?.method === "POST") {
-        const result = postWeightResponse ?? {
-          ok: true,
-          body: { weeklyLossRate, weeklyLossRateMargin, progressFlag, smoothedWeightKg },
-        };
-        return Promise.resolve({
-          ok: result.ok,
-          json: async () => result.body,
-        } as Response);
+        const result = postWeightResponse ?? { ok: true, body: progress };
+        return reply(result.ok, result.body);
       }
-      if (url === "/api/weight") {
-        return Promise.resolve({ ok: true, json: async () => logsOverride } as Response);
-      }
-      if (url === "/api/status") {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ weeklyLossRate, weeklyLossRateMargin, progressFlag, smoothedWeightKg }),
-        } as Response);
+      if (url === "/api/weight") return reply(true, logsOverride);
+      if (url === "/api/weight/smoothed") return reply(true, []);
+      if (url === "/api/status") return reply(true, progress);
+      if (url === "/api/profile") {
+        return reply(true, { id: 1, target_weight_kg: targetWeightKg, life_stage_factor: 1.2, goal: "weight_loss", manual_override_kcal: null });
       }
       throw new Error(`Unhandled fetch: ${url}`);
     }),
   );
 };
 
+const recentList = () => screen.getByRole("region", { name: "Recent weigh-ins" });
+const hero = () => screen.getByRole("region", { name: "Progress" });
+
 describe("WeightScreen", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("renders logged weigh-ins in a table", async () => {
+  it("lists logged weigh-ins with the change from the one before", async () => {
     mockApi();
-    renderWithProvider(<WeightScreen />);
+    render(<WeightScreen />);
 
-    await waitFor(() => expect(screen.getByText("2026-09-01")).toBeInTheDocument());
-    expect(screen.getByText("5.2")).toBeInTheDocument();
-    expect(screen.getByText("starting point")).toBeInTheDocument();
-    expect(screen.getByText("2026-09-08")).toBeInTheDocument();
+    await waitFor(() => expect(within(recentList()).getAllByRole("listitem")).toHaveLength(2));
+    const [newer, older] = within(recentList()).getAllByRole("listitem");
+    expect(newer).toHaveTextContent("Thu 8 Oct");
+    expect(newer).toHaveTextContent("5.100");
+    expect(newer).toHaveTextContent("−100 g");
+    expect(older).toHaveTextContent("Thu 1 Oct");
+    expect(older).toHaveTextContent("starting point");
   });
 
   it("lists only the 7 most recent weigh-ins", async () => {
-    // /api/weight returns newest first
     const manyLogs: WeightLog[] = Array.from({ length: 9 }, (_, i) => ({
       id: i + 1,
-      date: `2026-09-${String(9 - i).padStart(2, "0")}`,
+      date: `2026-10-${String(9 - i).padStart(2, "0")}`,
       weight_kg: 5.0,
       notes: null,
     }));
     mockApi({ logs: manyLogs });
-    renderWithProvider(<WeightScreen />);
+    render(<WeightScreen />);
 
-    await waitFor(() => expect(screen.getByText("2026-09-09")).toBeInTheDocument());
-    expect(screen.getByText("2026-09-03")).toBeInTheDocument();
-    expect(screen.queryByText("2026-09-02")).not.toBeInTheDocument();
-    expect(screen.queryByText("2026-09-01")).not.toBeInTheDocument();
+    await waitFor(() => expect(within(recentList()).getAllByRole("listitem")).toHaveLength(7));
+    expect(within(recentList()).getByText("Fri 9 Oct")).toBeInTheDocument();
+    expect(within(recentList()).getByText("Sat 3 Oct")).toBeInTheDocument();
+    expect(within(recentList()).queryByText("Fri 2 Oct")).not.toBeInTheDocument();
   });
 
   it("shows an empty state when there are no weigh-ins", async () => {
     mockApi({ logs: [] });
-    renderWithProvider(<WeightScreen />);
+    render(<WeightScreen />);
 
-    await waitFor(() =>
-      expect(screen.getByText("No weigh-ins logged yet.")).toBeInTheDocument(),
-    );
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(await screen.findByText("No weigh-ins logged yet.")).toBeInTheDocument();
+    expect(within(hero()).getByText("No weigh-ins yet")).toBeInTheDocument();
+  });
+
+  it("shows the smoothed weight in kg and lb", async () => {
+    mockApi({ smoothedWeightKg: 7.978 });
+    render(<WeightScreen />);
+
+    await waitFor(() => expect(within(hero()).getByText("7.98")).toBeInTheDocument());
+    expect(within(hero()).getByText(/17\.59 lb · last weigh-in 5\.1 kg 8 Oct/)).toBeInTheDocument();
   });
 
   it.each([
     ["too_fast", "Losing too fast"],
     ["reversing", "Gaining weight"],
     ["stalled", "Progress stalled"],
-  ] as const)("shows a %s banner from status on load", async (progressFlag, title) => {
+  ] as const)("shows a %s warning from status on load", async (progressFlag, title) => {
     mockApi({ progressFlag, weeklyLossRate: 0.05 });
-    renderWithProvider(<WeightScreen />);
+    render(<WeightScreen />);
 
-    await waitFor(() => expect(screen.getByText(title)).toBeInTheDocument());
-    expect(screen.getByText("5.0%/week")).toBeInTheDocument();
-  });
-
-  it("shows no banner when progressFlag is null", async () => {
-    mockApi();
-    renderWithProvider(<WeightScreen />);
-
-    await waitFor(() => expect(screen.getByText("2026-09-01")).toBeInTheDocument());
-    expect(screen.queryByText("Losing too fast")).not.toBeInTheDocument();
-    expect(screen.queryByText("Gaining weight")).not.toBeInTheDocument();
-    expect(screen.queryByText("Progress stalled")).not.toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(title);
+    expect(alert).toHaveTextContent("5.0%/week");
   });
 
   it.each([
     [0.008, "Trend: losing 0.8%/week"],
     [-0.005, "Trend: gaining 0.5%/week"],
-  ])("shows a neutral trend line for rate %s when there's no flag", async (weeklyLossRate, text) => {
+  ])("shows a neutral trend for rate %s when there's no flag", async (weeklyLossRate, text) => {
     mockApi({ weeklyLossRate });
-    renderWithProvider(<WeightScreen />);
+    render(<WeightScreen />);
 
-    await waitFor(() => expect(screen.getByText(text)).toBeInTheDocument());
+    expect(await screen.findByText(text)).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("shows the margin alongside the rate", async () => {
     mockApi({ weeklyLossRate: 0.006, weeklyLossRateMargin: 0.004 });
-    renderWithProvider(<WeightScreen />);
+    render(<WeightScreen />);
 
-    await waitFor(() =>
-      expect(screen.getByText("Trend: losing 0.6%/week (±0.4)")).toBeInTheDocument(),
-    );
+    expect(await screen.findByText("Trend: losing 0.6%/week (±0.4)")).toBeInTheDocument();
   });
 
   it("shows a warm-up message when there isn't enough data for a trend", async () => {
-    mockApi({ weeklyLossRate: null });
-    renderWithProvider(<WeightScreen />);
+    mockApi();
+    render(<WeightScreen />);
 
-    await waitFor(() =>
-      expect(screen.getByText(/Trend: not enough weigh-ins yet/)).toBeInTheDocument(),
-    );
+    expect(await screen.findByText("Trend: not enough weigh-ins yet")).toBeInTheDocument();
   });
 
-  it("hides the trend line when a banner is already showing the rate", async () => {
-    mockApi({ progressFlag: "too_fast", weeklyLossRate: 0.03 });
-    renderWithProvider(<WeightScreen />);
+  it("shows progress from the first weigh-in toward the target", async () => {
+    // 5.2 → 5.0 target, smoothed 5.1: halfway.
+    mockApi({ smoothedWeightKg: 5.1, targetWeightKg: 5.0 });
+    render(<WeightScreen />);
 
-    await waitFor(() => expect(screen.getByText("Losing too fast")).toBeInTheDocument());
-    expect(screen.queryByText(/^Trend:/)).not.toBeInTheDocument();
+    expect(await screen.findByText("50% there")).toBeInTheDocument();
+    expect(within(hero()).getByText("5.2 kg")).toBeInTheDocument();
+    expect(within(hero()).getByText("5 kg")).toBeInTheDocument();
   });
 
-  it.each([
-    [null, "Trend: losing 1.8%/week"],
-    ["too_fast", "Losing too fast"],
-  ] as const)("shows the average weight alongside the trend (flag %s)", async (progressFlag, trend) => {
-    mockApi({ progressFlag, weeklyLossRate: 0.018, smoothedWeightKg: 7.6123 });
-    renderWithProvider(<WeightScreen />);
+  it("leaves out the progress bar when there's no target", async () => {
+    mockApi({ smoothedWeightKg: 5.1 });
+    render(<WeightScreen />);
 
-    await waitFor(() => expect(screen.getByText("Avg weight: 7.61 kg")).toBeInTheDocument());
-    expect(screen.getByText(trend)).toBeInTheDocument();
+    await waitFor(() => expect(within(hero()).getByText("5.10")).toBeInTheDocument());
+    expect(screen.queryByText(/% there/)).not.toBeInTheDocument();
   });
 
-  it("hides the average weight when there are no weigh-ins", async () => {
-    mockApi({ logs: [], smoothedWeightKg: null });
-    renderWithProvider(<WeightScreen />);
+  it("previews the weight in lb before saving", async () => {
+    mockApi({ smoothedWeightKg: 5.1 });
+    render(<WeightScreen />);
+    const user = userEvent.setup();
 
-    await waitFor(() =>
-      expect(screen.getByText("No weigh-ins logged yet.")).toBeInTheDocument(),
-    );
-    expect(screen.queryByText(/^Avg weight:/)).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("Weight (kg)"), "5");
+    const lcd = screen.getByLabelText("Weight (kg)").closest(".lcd")!;
+    expect(lcd).toHaveTextContent("11.02 lb");
+    expect(lcd).toHaveTextContent("−100 g vs smoothed");
   });
 
-  it("adds a weigh-in, refreshes the table, and updates the progress banner", async () => {
-    mockApi({ progressFlag: "too_fast", weeklyLossRate: 0.04 });
-    renderWithProvider(<WeightScreen />);
-    await waitFor(() => expect(screen.getByText("2026-09-01")).toBeInTheDocument());
-
-    const newLog: WeightLog = { id: 3, date: "2026-09-15", weight_kg: 5.0, notes: null };
-    // After the POST succeeds, the follow-up GET /api/weight should reflect the new entry.
-    (fetch as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      (url: string, init?: RequestInit) => {
-        if (url === "/api/weight" && init?.method === "POST") {
-          return Promise.resolve({
-            ok: true,
-            json: async () => ({ weeklyLossRate: 0.02, progressFlag: "stalled" }),
-          } as Response);
-        }
-        if (url === "/api/weight") {
-          return Promise.resolve({ ok: true, json: async () => [...logs, newLog] } as Response);
-        }
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ weeklyLossRate: 0.04, progressFlag: "too_fast" }),
-        } as Response);
-      },
-    );
+  it("adds a weigh-in, refreshes the list, and updates the trend", async () => {
+    mockApi({ postWeightResponse: { ok: true, body: { weeklyLossRate: 0.03, weeklyLossRateMargin: 0.002, progressFlag: "too_fast", smoothedWeightKg: 5.0 } } });
+    render(<WeightScreen />);
+    await waitFor(() => expect(within(recentList()).getAllByRole("listitem")).toHaveLength(2));
 
     const user = userEvent.setup();
     await user.clear(screen.getByLabelText("Date"));
-    await user.type(screen.getByLabelText("Date"), "2026-09-15");
-    await user.type(screen.getByLabelText("Weight (kg)"), "5");
-    await user.click(screen.getByRole("button", { name: "Add entry" }));
+    await user.type(screen.getByLabelText("Date"), "2026-10-15");
+    await user.type(screen.getByLabelText("Weight (kg)"), "4.95");
+    await user.type(screen.getByLabelText("Note"), "after vet");
+    await user.click(screen.getByRole("button", { name: "Save weigh-in" }));
 
     expect(fetch).toHaveBeenCalledWith(
       "/api/weight",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ date: "2026-09-15", weight_kg: 5, notes: null }),
+        body: JSON.stringify({ date: "2026-10-15", weight_kg: 4.95, notes: "after vet" }),
       }),
     );
-
-    await waitFor(() => expect(screen.getByText("2026-09-15")).toBeInTheDocument());
-    expect(screen.getByText("Progress stalled")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Losing too fast");
+    expect(screen.getByRole("status")).toHaveTextContent("Saved 4.95 kg for 15 Oct");
     expect(screen.getByLabelText("Weight (kg)")).toHaveValue("");
+    expect(screen.getByLabelText("Note")).toHaveValue("");
+    const getCalls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.filter(
+      ([url, init]) => url === "/api/weight" && !init,
+    );
+    expect(getCalls).toHaveLength(2);
+  });
+
+  it("keeps Save disabled until a weight is entered", async () => {
+    mockApi();
+    render(<WeightScreen />);
+
+    expect(screen.getByRole("button", { name: "Save weigh-in" })).toBeDisabled();
+    await userEvent.setup().type(screen.getByLabelText("Weight (kg)"), "5");
+    expect(screen.getByRole("button", { name: "Save weigh-in" })).toBeEnabled();
   });
 
   it("ignores repeat taps while a weigh-in is being added", async () => {
     mockApi();
-    // Hold the POST open (e.g. server waking up) until the test releases it.
     let releasePost!: () => void;
     const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
     const respond = fetchMock.getMockImplementation()!;
@@ -234,35 +221,33 @@ describe("WeightScreen", () => {
       }
       return respond(url, init);
     });
-    renderWithProvider(<WeightScreen />);
-    await waitFor(() => expect(screen.getByText("2026-09-01")).toBeInTheDocument());
+    render(<WeightScreen />);
 
     const user = userEvent.setup();
     await user.type(screen.getByLabelText("Weight (kg)"), "5");
-    const addButton = screen.getByRole("button", { name: "Add entry" });
-    await user.click(addButton);
-    await user.click(addButton);
-    await user.click(addButton);
+    const saveButton = screen.getByRole("button", { name: "Save weigh-in" });
+    await user.click(saveButton);
+    await user.click(saveButton);
+    await user.type(screen.getByLabelText("Weight (kg)"), "{Enter}");
 
-    const posts = () =>
-      fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+    const posts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
     expect(posts()).toHaveLength(1);
-    expect(addButton).toBeDisabled();
+    expect(saveButton).toBeDisabled();
 
     releasePost();
-    await waitFor(() => expect(addButton).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved 5 kg"));
     expect(posts()).toHaveLength(1);
   });
 
   it("shows the server error when adding a weigh-in fails", async () => {
     mockApi({ postWeightResponse: { ok: false, body: { error: "Invalid weight" } } });
-    renderWithProvider(<WeightScreen />);
-    await waitFor(() => expect(screen.getByText("2026-09-01")).toBeInTheDocument());
+    render(<WeightScreen />);
 
     const user = userEvent.setup();
     await user.type(screen.getByLabelText("Weight (kg)"), "5");
-    await user.click(screen.getByRole("button", { name: "Add entry" }));
+    await user.click(screen.getByRole("button", { name: "Save weigh-in" }));
 
-    await waitFor(() => expect(screen.getByText("Invalid weight")).toBeInTheDocument());
+    expect(await screen.findByText("Invalid weight")).toBeInTheDocument();
+    expect(screen.getByLabelText("Weight (kg)")).toHaveValue("5");
   });
 });

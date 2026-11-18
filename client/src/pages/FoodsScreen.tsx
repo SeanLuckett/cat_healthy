@@ -1,13 +1,45 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Stack, Table, Text, Title } from "@mantine/core";
 import type { Food } from "../../../shared/types";
+import { Banner, PageHeader } from "../ui";
 
-// Active foods first so the ones in use aren't buried under old ones.
-const sortForDisplay = (foods: Food[]) =>
-  [...foods].sort((a, b) => Number(a.archived) - Number(b.archived));
+const FoodCard = ({
+  food,
+  pending,
+  onToggle,
+}: {
+  food: Food;
+  pending: boolean;
+  onToggle: () => void;
+}) => (
+  <article className={`card food${food.archived ? " archived" : ""}`}>
+    <div className="food-head">
+      <h3>{food.name}</h3>
+      <span className={`cat ${food.category}`}>{food.category}</span>
+    </div>
+    <div className="density">
+      <div>
+        <span className="num">{food.kcal_per_gram}</span>
+        <small>kcal / g</small>
+      </div>
+      <div>
+        <span className="num">{(food.kcal_per_gram * 10).toFixed(1)}</span>
+        <small>kcal / 10 g</small>
+      </div>
+    </div>
+    {food.notes && <p>{food.notes}</p>}
+    <button
+      className="archive-btn"
+      disabled={pending}
+      onClick={onToggle}
+      aria-label={`${food.archived ? "Unarchive" : "Archive"} ${food.name}`}
+    >
+      {food.archived ? "Unarchive" : "Archive"}
+    </button>
+  </article>
+);
 
 const FoodsScreen = () => {
-  const [foods, setFoods] = useState<Food[]>([]);
+  const [foods, setFoods] = useState<Food[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<number | null>(null);
 
@@ -30,61 +62,57 @@ const FoodsScreen = () => {
     }).finally(() => setPendingId(null));
     const body = await res.json();
     if (!res.ok) {
-      setError(body.error ?? "Failed to update food");
+      setError(body.error ?? "Couldn't update that food. Try again.");
       return;
     }
     setFoods(body);
   };
 
+  const active = foods?.filter((f) => !f.archived) ?? [];
+  const archived = foods?.filter((f) => f.archived) ?? [];
+  const card = (f: Food) => (
+    <FoodCard
+      key={f.id}
+      food={f}
+      pending={pendingId === f.id}
+      onToggle={() => setArchived(f, !f.archived)}
+    />
+  );
+
   return (
-    <Stack maw={640}>
-      <Title order={2}>Foods</Title>
-      <Text c="dimmed" size="sm">
-        Archived foods are hidden from the food picker but stay in your
-        feeding history.
-      </Text>
+    <>
+      <PageHeader eyebrow="Pantry" title="Foods" />
+      <p className="intro">
+        Archived foods drop out of the picker on the Today screen. They stay in
+        past feedings so the history still adds up.
+      </p>
 
       {error && (
-        <Alert color="red" title="Error">
-          {error}
-        </Alert>
+        <div className="banners">
+          <Banner tone="bad" title="Error">{error}</Banner>
+        </div>
       )}
 
-      {foods.length === 0 ? (
-        <Text c="dimmed">No foods yet.</Text>
+      {foods == null ? (
+        <p className="loading">Loading…</p>
+      ) : foods.length === 0 ? (
+        <p className="empty">No foods yet.</p>
       ) : (
-        <Table>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Name</Table.Th>
-              <Table.Th>kcal/g</Table.Th>
-              <Table.Th>Category</Table.Th>
-              <Table.Th />
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {sortForDisplay(foods).map((food) => (
-              <Table.Tr key={food.id} c={food.archived ? "dimmed" : undefined}>
-                <Table.Td>{food.name}</Table.Td>
-                <Table.Td>{food.kcal_per_gram}</Table.Td>
-                <Table.Td>{food.category}</Table.Td>
-                <Table.Td>
-                  <Button
-                    size="compact-sm"
-                    variant={food.archived ? "light" : "subtle"}
-                    loading={pendingId === food.id}
-                    onClick={() => setArchived(food, !food.archived)}
-                    aria-label={`${food.archived ? "Unarchive" : "Archive"} ${food.name}`}
-                  >
-                    {food.archived ? "Unarchive" : "Archive"}
-                  </Button>
-                </Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
+        <>
+          <section className="food-list" aria-label="Active foods">
+            {active.map(card)}
+          </section>
+          {archived.length > 0 && (
+            <>
+              <h2 className="subhead">Archived · {archived.length}</h2>
+              <section className="food-list" aria-label="Archived foods">
+                {archived.map(card)}
+              </section>
+            </>
+          )}
+        </>
       )}
-    </Stack>
+    </>
   );
 };
 

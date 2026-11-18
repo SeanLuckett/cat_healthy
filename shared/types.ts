@@ -49,3 +49,14 @@ export interface StatusResponse {
   smoothedWeightKg: number | null;
   currentWeightKg: number | null;
 }
+
+// POST /api/feedings: the updated status plus the new row's id, for undo.
+export interface FeedingCreatedResponse extends StatusResponse {
+  feedingId: number;
+}
+
+// One point on the smoothed (EWMA) weight curve.
+export interface SmoothedWeightPoint {
+  date: string; // ISO date, YYYY-MM-DD
+  ewma: number;
+}

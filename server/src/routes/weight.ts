@@ -1,6 +1,11 @@
 import { Router } from "express";
 import { db } from "../db.js";
-import { weightTrend, progressFlag, smoothedWeight } from "../calorie.js";
+import {
+  weightTrend,
+  progressFlag,
+  smoothedWeight,
+  weightEwma,
+} from "../calorie.js";
 import { getAllWeightLogs, getProfile } from "./status.js";
 
 export const weightRouter = Router();
@@ -18,6 +23,11 @@ const progressSummary = () => {
 
 weightRouter.get("/api/weight", (_req, res) => {
   res.json(getAllWeightLogs());
+});
+
+// The smoothed curve for the Weight screen's chart, oldest first.
+weightRouter.get("/api/weight/smoothed", (_req, res) => {
+  res.json(weightEwma(getAllWeightLogs()));
 });
 
 weightRouter.post("/api/weight", (req, res) => {

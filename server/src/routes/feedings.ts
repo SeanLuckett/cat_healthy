@@ -44,13 +44,14 @@ feedingsRouter.post("/api/feedings", (req, res) => {
       .json({ error: "a feeding can't be both a treat and a put-back" });
   }
 
-  db.prepare(
+  const { lastInsertRowid } = db.prepare(
     `INSERT INTO feeding_events (timestamp, food_id, grams, is_treat, is_put_back)
      VALUES (datetime('now', 'localtime'), ?, ?, ?, ?)`,
   ).run(food_id, grams, is_treat ? 1 : 0, is_put_back ? 1 : 0);
 
+  // The id lets the client offer an undo (DELETE) for the entry just made.
   try {
-    res.json(computeStatus());
+    res.json({ ...computeStatus(), feedingId: Number(lastInsertRowid) });
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
   }
